@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE)
 # Retrieved on 10/14/23 from - https://stackoverflow.com/questions/4090169/elegant-way-to-check-for-missing-packages-and-install-them 
 required_packages = c("tidyverse", "lubridate", "glmnet", "tidymodels", "caret", "car", "xgboost", "Metrics", "MASS", "Ckmeans.1d.dp", "pdp", "gridExtra", "usmap", "sp", "sf", "FSinR")
 new_packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
-if(length(new.packages)){
+if(length(new_packages)){
   install.packages(new_packages)
 }
 
