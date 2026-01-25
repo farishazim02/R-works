@@ -1,0 +1,359 @@
+Name,Ticker,Layoff,PctLayoff,DateLayoff,Industry,Headquarters,FinancingStage
+Akamai Technologies,AKAM,290,0.03,5/9/2023,Cloud,"Cambridge, MA",Post-IPO
+Outbrain,OB,90,0.1,6/1/2023,Business,"New York City, NY",Post-IPO
+Innovid,CTV,40,0.1,1/23/2023,Advertising,"New York City, NY",Post-IPO
+Virgin Galactic,SPCE,185,0.18,11/8/2023,Hardware,"Mojave, CA",Unknown
+Planet,PL,117,0.1,8/1/2023,Hardware,"San Francisco, CA",Acquired
+Sarcos,STRC,75,0.25,7/17/2023,Hardware,"Salt Lake City, UT",Post-IPO
+AppHarvest,APPH,200,1,7/27/2023,Agriculture,"Morehead, KY",Post-IPO
+Intel,INTC,311,NA,12/21/2023,AI,"Santa Clara, CA",Post-IPO
+UiPath,PATH,241,0.06,11/15/2022,AI,"New York City, NY",Post-IPO
+UiPath,PATH,210,0.05,6/27/2022,AI,"New York City, NY",Post-IPO
+iRobot,IRBT,350,0.31,1/29/2024,Hardware,"Bedford, MA",Acquired
+Similarweb,SMWB,120,0.1,11/16/2022,AI,"New York City, NY",Post-IPO
+Sema4,WGS,500,NA,11/14/2022,AI,"Stamford, CT",Post-IPO
+Sema4,WGS,250,0.13,8/15/2022,AI,"Stamford, CT",Post-IPO
+iRobot,IRBT,140,0.1,8/5/2022,Hardware,"Bedford, MA",Acquired
+Informatica,INFA,545,0.1,11/1/2023,Data,"Redwood City, CA",Post-IPO
+Streamline Health,STRM,26,0.24,10/16/2023,Data,"Atlanta, GA",Unknown
+Splunk,SPLK,500,0.07,11/1/2023,Data,"San Francisco, CA",Post-IPO
+Splunk,SPLK,325,0.04,2/1/2023,Data,"San Francisco, CA",Post-IPO
+Qualtrics,XM,780,0.14,10/4/2023,Software,"Seattle, WA",Acquired
+Vroom,VRM,275,NA,1/18/2023,Auto,"New York City, NY",Post-IPO
+Vroom,VRM,337,NA,8/8/2022,Auto,"New York City, NY",Post-IPO
+Vroom,VRM,270,0.14,5/9/2022,Auto,"New York City, NY",Post-IPO
+TuSimple,TSPH,150,0.75,12/4/2023,Electric Vehicle (EV),"San Diego, CA",Post-IPO
+Embark Trucks,EMBK,230,0.7,3/3/2023,Auto,"San Francisco, CA",Post-IPO
+Quanergy Systems,QNGY,72,NA,12/14/2022,Auto,"Sunnyvale, CA",Post-IPO
+AEye,AEYE,46,0.33,3/28/2023,Auto,"Dublin, CA",Post-IPO
+Capital One,COF,1100,NA,1/19/2023,Finance,"McLean, VA",Post-IPO
+First Citizens Bank,FCNCA,500,0.03,5/24/2023,Finance,"Raleigh, NC",Unknown
+Enovix,ENVX,185,NA,10/5/2023,Hardware,"Fremont, CA",Post-IPO
+Informatica,INFA,450,0.07,1/10/2023,Data,"Redwood City, CA",Post-IPO
+Informatica,INFA,545,0.1,11/1/2023,Data,"Redwood City, CA",Post-IPO
+Alphabet,GOOG,40,NA,10/18/2023,Software,"Mountain View, CA",Post-IPO
+Alphabet,GOOG,12000,NA,1/20/2023,Software,"Mountain View, CA",Post-IPO
+Illumina,ILMN,111,NA,2/1/2024,Health,"San Diego, CA",Post-IPO
+Nevro,NVRO,63,0.05,1/9/2024,Biotech,"Menlo Park, CA",Post-IPO
+NanoString Technologies,OF1,50,0.09,1/6/2024,Biotech,"Seattle, WA",Post-IPO
+Crispr Therapeutics,CRSP,50,0.1,11/22/2023,Biotech,"Cambridge, MA",Unknown
+PhenomeX,CELL,208,NA,10/16/2023,Biotech,"Emeryville, CA",Unknown
+2seventy bio,TSVT,176,0.4,9/12/2023,Biotech,"Cambridge, MA",Unknown
+Absci,ABSI,30,0.15,9/5/2023,Biotech,"Vancouver, WA",Post-IPO
+Sage Therapeutics,SAGE,188,0.4,8/31/2023,Biotech,"Cambridge, MA",Post-IPO
+amyris,AMRSQ,260,NA,8/11/2023,Biotech,"Emeryville, CA",Series B
+Emergent BioSolutions,EBS,400,NA,8/8/2023,Biotech,"Gaithersburg, MD",Unknown
+Homology,FIXX,60,NA,7/28/2023,Biotech,"Boston, MA",Post-IPO
+FibroGen,FGEN,104,0.32,7/20/2023,Biotech,"San Francisco, CA",Unknown
+Amyris Inc.,AMRSQ,148,NA,6/25/2023,Biotech,"Emeryville, CA",Series B
+Foxo Technologies,FOXO,7,NA,7/21/2023,Biotech,"Minneapolis, MN",Unknown
+Foundation Medicine,FMI,135,NA,4/4/2023,Biotech,"Cambridge, MA",Acquired
+Leafly,LFLY,40,0.21,3/16/2023,Health,"Seattle, WA",Post-IPO
+Leafly,LFLY,56,0.21,10/18/2022,Health,"Seattle, WA",Post-IPO
+Pure Storage,PSTG,275,0.04,2/8/2024,Cloud,"Santa Clara, CA",Post-IPO
+MariaDB,MRDB,84,0.28,10/12/2023,Cloud,"Redwood City, CA",Post-IPO
+Rackspace,RXT,275,NA,3/27/2023,Cloud,"San Antonio, TX",Acquired
+New Relic,NEWR,212,NA,6/27/2023,Services,"Bay Area, CA",Post-IPO
+NetApp,NTAP,960,0.08,1/31/2023,Cloud,"Sunnyvale, CA",Post-IPO
+DigitalOcean,DOCN,200,0.11,2/15/2023,Cloud,"New York City, NY",Post-IPO
+Edgio,EGIO,95,0.14,12/13/2022,Cloud,"Tempe, AZ",Post-IPO
+Asana,ASAN,180,0.09,11/15/2022,Telecommunication,"San Francisco, CA",Post-IPO
+Thoughtworks,TWKS,500,0.04,3/1/2023,Human Resources,"Chicago, IL",Post-IPO
+Sonos,SONO,130,0.07,6/14/2023,Consumer,"Santa Barbara, CA",Post-IPO
+Logitech,LOGI,300,NA,3/22/2023,Consumer,"Newark, CA",Post-IPO
+Samsung,SSNLF,30,NA,3/14/2023,Consumer,"Ridgefield Park, NJ",Post-IPO
+Taboola,TBLA,100,0.06,9/13/2022,Business,"New York City, NY",Post-IPO
+SoundHound,SOUN,200,0.5,1/5/2023,AI,"Santa Clara, CA",Post-IPO
+SoundHound,SOUN,45,0.1,11/10/2022,AI,"Santa Clara, CA",Post-IPO
+Amdocs,DOX,700,0.03,1/2/2023,Customer Relationship,"Chesterfield, MO",Post-IPO
+Freshworks,FRSH,90,0.02,12/15/2022,Customer Relationship,"San Mateo, CA",Post-IPO
+Coinbase,COIN,950,0.2,1/10/2023,Cryptocurrency,San Francisco,Post-IPO
+Coinbase,COIN,60,NA,11/10/2022,Cryptocurrency,San Francisco,Post-IPO
+TaskUs,TASK,186,NA,2/22/2023,Customer Relationship,"Santa Monica, CA",Post-IPO
+Sprinklr,CXM,100,0.04,2/15/2023,Customer Relationship,"New York City, NY",Post-IPO
+Proofpoint,PFPT,260,0.06,1/31/2024,Cybersecurity,"Sunnyvale, CA",Acquired
+Rapid7,RPD,470,0.18,8/8/2023,Cybersecurity,"Boston, MA",Post-IPO
+Varonis Systems,VRNS,110,NA,11/6/2022,Cybersecurity,"New York City, NY",Post-IPO
+HashiCorp,HCP,69,NA,1/11/2023,Cybersecurity,"San Francisco, CA",Post-IPO
+ForeScout Technologies,FSCT,100,0.1,1/10/2023,Cybersecurity,"San Jose, CA",Acquired
+SecureWorks,SCWX,300,0.15,8/14/2023,Cybersecurity,"Atlanta, GA",Post-IPO
+SecureWorks,SCWX,212,0.09,2/7/2023,Cybersecurity,"Atlanta, GA",Post-IPO
+Matterport,MTTR,170,0.3,7/11/2023,Data,"San Francisco, CA",Post-IPO
+Nutanix,NTNX,270,0.04,8/10/2022,Data,"San Jose, CA",Post-IPO
+Integral Ad Science,IAS,120,0.13,12/7/2022,Data,"New York City, NY",Acquired
+Instacart,CART,250,0.07,2/13/2024,Services,"San Francisco, CA",Unknown
+Kaltura,KLTR,75,0.11,1/4/2023,Software,"New York City, NY",Post-IPO
+GitLab,GTLB,130,0.35,2/9/2023,Software,"San Francisco, CA",Post-IPO
+Outbrain,OB,90,0.1,6/1/2023,Business,"New York City, NY",Post-IPO
+Outbrain,OB,38,0.03,7/26/2022,Business,"New York City, NY",Post-IPO
+Amazon,AMZN,400,NA,2/6/2024,Business,"Seattle, WA",Post-IPO
+Amazon,AMZN,30,NA,1/18/2024,Business,"Seattle, WA",Post-IPO
+Etsy,ETSY,225,0.11,12/13/2023,Business,"Brooklyn, NY",Post-IPO
+Chewy,CHWY,200,NA,11/14/2023,Business,"Plantation, FL",Post-IPO
+Stitch Fix,SFIX,558,NA,10/9/2023,Business,"San Francisco, CA",Post-IPO
+Shopify,SHOP,1000,0.1,7/26/2022,Business,"San Francisco, CA",Post-IPO
+Zulily,ZU,99,0.1,5/16/2022,Business,"Seattle, WA",Acquired
+Vroom,VRM,800,0.9,1/23/2024,Auto,"New York City, NY",Post-IPO
+Enjoy,ENJOY.SN,400,0.18,6/30/2022,Business,"Palo Alto, CA",Post-IPO
+The RealReal,REAL,230,0.07,2/16/2023,Business,"San Francisco, CA",Post-IPO
+Warby Parker,WRBY,63,NA,8/8/2022,Business,"New York City, NY",Post-IPO
+Stitch Fix,SFIX,330,0.15,6/9/2022,Business,"San Francisco, CA",Post-IPO
+Wish,WISH,152,0.17,9/12/2023,Business,"San Francisco, CA",Post-IPO
+Wish,WISH,160,NA,8/2/2023,Business,"San Francisco, CA",Post-IPO
+Wish,WISH,150,NA,1/31/2023,Business,"San Francisco, CA",Post-IPO
+eBay,EBAY,500,0.04,2/7/2023,Business,"San Jose, CA",Post-IPO
+Groupon,GRPN,500,NA,1/30/2023,Business,"Chicago, IL",Post-IPO
+Wayfair,W,1750,0.1,1/20/2023,Business,"Boston, MA",Post-IPO
+Wayfair,W,870,0.05,8/19/2022,Business,"Boston, MA",Post-IPO
+Groupon,GRPN,500,NA,8/8/2022,Business,"Chicago, IL",Post-IPO
+Amazon,AMZN,180,NA,11/13/2023,Business,"Seattle, WA",Post-IPO
+Amazon,AMZN,80,NA,7/13/2023,Business,"Seattle, WA",Post-IPO
+Riskified,RSKD,40,0.06,2/13/2024,Business,"New York City, NY",Post-IPO
+Pluralsight,PS,400,0.2,12/12/2022,Education,"Salt Lake City, UT",Acquired
+WalkMe,WKME,112,0.1,4/19/2023,Education,"San Francisco, CA",Post-IPO
+WalkMe,WKME,43,0.03,1/8/2023,Education,"San Francisco, CA",Post-IPO
+DocuSign,DOCU,440,0.06,2/6/2024,Services,"San Francisco, CA",Post-IPO
+DocuSign,DOCU,680,0.1,2/16/2023,Services,"San Francisco, CA",Post-IPO
+Rivian Automotive,RIVN,20,NA,12/8/2023,Electric Vehicle (EV),"Plymouth, MI",Post-IPO
+Tesla,TSLA,55,NA,8/21/2023,Electric Vehicle (EV),"Austin, TX",Post-IPO
+Nikola Motor Company,NKLA,270,NA,6/16/2023,Electric Vehicle (EV),"Phoenix, AZ",Unknown
+TuSimple,TSPH,330,0.3,5/17/2023,Electric Vehicle (EV),"San Diego, CA",Post-IPO
+TuSimple,TSPH,350,0.25,12/21/2022,Electric Vehicle (EV),"San Diego, CA",Post-IPO
+Rivian,RIVN,840,0.06,7/28/2022,Electric Vehicle (EV),"Plymouth, MI",Post-IPO
+EVgo,EVGO,40,NA,2/23/2023,Electric Vehicle (EV),"Los Angeles, CA",Post-IPO
+Analog Devices,ADI,111,NA,12/13/2023,Hardware,"Norwood, MA",Post-IPO
+TTM Technologies,TTMI,240,NA,10/2/2023,Hardware,"Santa Clara, CA",Unknown
+Jabil,JBL,140,NA,10/20/2023,Hardware,"St. Petersburg, FL",Unknown
+Enphase Energy,ENPH,350,0.1,12/18/2023,Energy,"Fremont, CA",Post-IPO
+Twilio,TWLO,300,0.05,12/4/2023,Business,"San Francisco, CA",Post-IPO
+Microsoft,MSFT,158,NA,5/10/2023,Business,"Seattle, WA",Post-IPO
+Microsoft,MSFT,10000,0.05,1/18/2023,Business,"Seattle, WA",Post-IPO
+BlackLine,BL,95,0.05,12/8/2022,Business,"Los Angeles, CA",Post-IPO
+Twilio,TWLO,800,0.11,9/14/2022,Business,"San Francisco, CA",Post-IPO
+Zendesk,ZEN,320,0.08,5/31/2023,Business,"San Francisco, CA",Acquired
+Zendesk,ZEN,350,0.05,11/7/2022,Business,"San Francisco, CA",Acquired
+Intel,INTC,343,NA,1/30/2023,AI,"Santa Clara, CA",Post-IPO
+Intel,INTC,226,NA,8/17/2023,AI,"Santa Clara, CA",Post-IPO
+Intel,INTC,140,NA,8/17/2023,AI,"Santa Clara, CA",Post-IPO
+Okta,OKTA,300,0.05,2/2/2023,Business,"San Francisco, CA",Post-IPO
+Okta,OKTA,24,NA,8/26/2022,Business,"San Francisco, CA",Post-IPO
+Okta,OKTA,400,0.07,2/1/2024,Business,"San Francisco, CA",Post-IPO
+BlackLine Systems Inc.,BL,21,NA,10/2/2023,Business,"Los Angeles, CA",Post-IPO
+SAP,SAP,3000,0.03,1/26/2023,Business,"Newtown Square, PA",Post-IPO
+Cisco,CSCO,4100,0.05,11/16/2022,Business,"San Jose, CA",Post-IPO
+Oracle,ORCL,200,NA,11/2/2022,Software,"Austin, TX",Post-IPO
+F5,FFIV,100,0.01,10/21/2022,Software,"Seattle, WA",Post-IPO
+Salesforce,CRM,700,0.01,1/26/2024,Business,"San Francisco, CA",Post-IPO
+Zscaler,ZS,177,0.03,3/2/2023,Business,"San Jose, CA",Post-IPO
+Dropbox,DBX,500,0.16,4/27/2023,Telecommunication,"San Francisco, CA",Post-IPO
+Affirm,AFRM,60,NA,2/21/2024,Finance,"San Francisco, CA",Post-IPO
+Robinhood Markets Inc.,HOOD,3,NA,10/2/2023,Finance,"Menlo Park, CA",Post-IPO
+BlackLine,BL,95,0.05,8/23/2023,Business,"Los Angeles, CA",Post-IPO
+Everquote,EVER,100,NA,7/11/2023,Finance,"Cambridge, MA",Post-IPO
+Robinhood,HOOD,150,0.07,6/26/2023,Finance,"Menlo Park, CA",Post-IPO
+Payoneer,PAYO,200,0.1,6/26/2023,Finance,"New York City, NY",Post-IPO
+Robinhood,HOOD,713,0.23,8/2/2022,Finance,"Menlo Park, CA",Post-IPO
+PayPal,PYPL,83,NA,5/23/2022,Finance,"San Jose, CA",Post-IPO
+Robinhood,HOOD,340,0.09,4/26/2022,Finance,"Menlo Park, CA",Post-IPO
+Lending Club,LC,225,0.14,1/12/2023,Finance,"San Francisco, CA",Post-IPO
+Lending Club,LC,172,0.14,10/12/2023,Finance,"San Francisco, CA",Post-IPO
+LendingTree,TREE,150,0.13,3/30/2023,Finance,"San Francisco, CA",Post-IPO
+Affirm,AFRM,500,0.19,2/8/2023,Finance,"San Francisco, CA",Post-IPO
+Blend,BLND,340,0.28,1/10/2023,Finance,"San Francisco, CA",Post-IPO
+Blend,BLND,100,0.06,11/10/2022,Finance,"San Francisco, CA",Post-IPO
+Blend,BLND,220,0.12,8/15/2022,Finance,"San Francisco, CA",Post-IPO
+Blend,BLND,200,0.1,4/19/2022,Finance,"San Francisco, CA",Post-IPO
+Blend Labs,BLND,150,0.19,8/10/2023,Finance,"San Francisco, CA",Post-IPO
+nCino,NCNO,100,0.07,1/18/2023,Finance,"Wilmington, NC",Post-IPO
+Peloton,PTON,6,NA,10/26/2023,Fitness,"New York City, NY",Post-IPO
+Peloton,PTON,11,NA,7/17/2023,Fitness,"New York City, NY",Post-IPO
+Peloton,PTON,784,0.13,8/12/2022,Fitness,"New York City, NY",Post-IPO
+Beachbody,BODY,70,0.1,1/27/2022,Fitness,"Santa Monica, CA",Unknown
+Lululemon Studio,LULU,120,NA,9/28/2023,Fitness,"New York City, NY",Acquired
+Beyond Meat,BYND,65,0.19,11/2/2023,Food,"Manhattan Beach, CA",Post-IPO
+Olo,OLO,81,0.11,6/14/2023,Food,"New York City, NY",Unknown
+Grubhub,GRUB,400,0.15,6/12/2023,Food,"San Francisco, CA",Acquired
+DoorDash,DASH,1250,0.06,11/30/2022,Food,"San Francisco, CA",Post-IPO
+Beyond Meat,BYND,200,0.19,10/14/2022,Food,"Manhattan Beach, CA",Post-IPO
+Beyond Meat,BYND,40,NA,8/3/2022,Food,"Manhattan Beach, CA",Post-IPO
+Upwork,UPWK,137,0.15,5/3/2023,Services,"San Francisco, CA",Post-IPO
+Twitch,AMZN,500,0.35,1/9/2024,Gaming,"San Francisco, CA",Acquired
+Unity,U,265,0.04,11/28/2023,Gaming,"San Francisco, CA",Post-IPO
+Motorsport Games,MSGM,38,0.4,11/3/2023,Gaming,"Miami, FL",Unknown
+Roblox,RBLX,15,NA,10/23/2023,Gaming,"Garden City, NY",Unknown
+Activision Blizzard,ATVI,10,NA,9/26/2023,Gaming,"Santa Monica, CA",Unknown
+Roblox,RBLX,30,NA,9/22/2023,Gaming,"Garden City, NY",Unknown
+Activision Blizzard,ATVI,50,NA,7/19/2023,Gaming,"Santa Monica, CA",Unknown
+Unity,U,600,0.08,5/3/2023,Gaming,"San Francisco, CA",Post-IPO
+Electronic Arts,EA,780,0.06,3/29/2023,Gaming,"Redwood City, CA",Post-IPO
+Electronic Arts,EA,200,NA,3/1/2023,Gaming,"Redwood City, CA",Post-IPO
+Unity,U,284,NA,1/17/2023,Gaming,"San Francisco, CA",Post-IPO
+Unity,U,225,0.04,6/29/2022,Gaming,"San Francisco, CA",Post-IPO
+Playtika,PLTK,250,0.33,5/31/2022,Gaming,"Chicago, IL",Post-IPO
+Skillz,SKLZ,70,0.1,5/20/2022,Gaming,"San Francisco, CA",Post-IPO
+23andMe,ME,71,0.11,8/8/2023,Health,"Sunnyvale, CA",Post-IPO
+23andMe,ME,75,0.09,6/9/2023,Health,"Sunnyvale, CA",Post-IPO
+Dell,DELL,6650,0.05,2/6/2023,Hardware,"Round Rock, TX",Post-IPO
+IBM,IBM,3900,0.02,1/25/2023,Hardware,"Armonk, NY",Post-IPO
+GoHealth,GOCO,800,0.2,8/11/2022,Health,"Chicago, IL",Post-IPO
+Cue Health,HLTH,209,0.3,2/2/2024,Health,"San Diego, CA",Post-IPO
+Cue Health,HLTH,94,0.13,1/5/2024,Health,"San Diego, CA",Post-IPO
+Illumina,ILMN,151,NA,8/17/2023,Biotech,"San Diego, CA",Post-IPO
+Doximity,DOCS,100,0.1,8/8/2023,Health,"San Francisco, CA",Post-IPO
+Medtronic,MDT,59,NA,4/12/2023,Health,"Minneapolis, MN",Post-IPO
+Akili Interactive Labs,AKLI,46,0.3,1/12/2023,Health,"Boston, MA",Post-IPO
+Cue,CUE,388,NA,1/5/2023,Health,"San Diego, CA",Post-IPO
+Definitive Healthcare,DH,55,0.06,1/12/2023,Health,"Framingham, MA",Post-IPO
+Invitae,NVTAQ,1000,NA,7/18/2022,Health,"San Francisco, CA",Post-IPO
+GoodRx,GDRX,140,0.16,8/31/2022,Health,"Los Angeles, CA",Post-IPO
+Teladoc Health,TDOC,300,0.06,1/18/2023,Health,"Purchase, NY",Post-IPO
+Sonder,SOND,106,0.17,2/20/2024,Services,"San Francisco, CA",Post-IPO
+Sonder,SOND,100,0.14,3/1/2023,Services,"San Francisco, CA",Post-IPO
+Airbnb,ABNB,30,NA,3/3/2023,Services,"San Francisco, CA",Post-IPO
+Pagasystems,PEGA,240,0.04,8/31/2023,Human Resources,"Cambridge, MA",Unknown
+Workday,WDAY,525,0.03,1/31/2023,Human Resources,"Pleasanton, CA",Post-IPO
+Hippo Insurance,HIPO,70,NA,10/26/2023,Insurance,"Palo Alto, CA",Post-IPO
+Root Insurance,ROOT,467,NA,11/9/2022,Insurance,"Columbus, OH",Post-IPO
+Root Insurance,ROOT,330,NA,1/20/2022,Insurance,"Columbus, OH",Post-IPO
+Lemonade,LMND,45,0.03,5/16/2023,Insurance,"New York City, NY",Post-IPO
+Doma,DOMA,515,0.4,12/6/2022,Insurance,"San Francisco, CA",Post-IPO
+Doma,DOMA,250,0.13,8/4/2022,Insurance,"San Francisco, CA",Post-IPO
+Doma,DOMA,310,0.15,5/10/2022,Insurance,"San Francisco, CA",Post-IPO
+Metromile,MILE,60,0.2,7/29/2022,Insurance,"San Francisco, CA",Acquired
+Viasat,VSAT,800,0.1,11/2/2023,Telecommunication,"Carlsbad, CA",Post-IPO
+Expedia Group,EXPE,100,NA,10/17/2023,Telecommunication,"Seattle, WA",Post-IPO
+Ericsson,ERIC,8500,0.08,2/24/2023,Telecommunication,"Plano, TX",Post-IPO
+Cyren,CYRNQ,121,NA,2/1/2023,Cloud,"McLean, VA",Post-IPO
+Wolfspeed Inc.,WOLF,50,NA,10/2/2023,Hardware,"Durham, NC",Unknown
+Coherent,COHR,108,NA,3/16/2023,Hardware,"Santa Clara, CA",Post-IPO
+LegalZoom,LZ,100,NA,10/19/2023,Services,"Glendale, CA",Post-IPO
+Freightos,CRGO,50,0.13,7/12/2023,Logistics,"Miami, FL",Post-IPO
+SimilarWeb,SMWB,60,0.06,5/10/2023,Business,"New York City, NY",Post-IPO
+UserTesting,USER,63,NA,3/3/2023,Business,"San Francisco, CA",Acquired
+TechTarget,TTGT,60,0.05,12/8/2022,Business,"Newton, MA",Post-IPO
+HubSpot,HUBS,500,0.07,1/31/2023,Business,"Cambridge, MA",Post-IPO
+HubSpot,HUBS,20,NA,1/24/2024,Business,"Cambridge, MA",Post-IPO
+Adobe,ADBE,100,NA,12/6/2022,Business,"San Jose, CA",Post-IPO
+Netflix,NFLX,30,NA,9/14/2022,Media,"Los Gatos, CA",Post-IPO
+Netflix,NFLX,150,0.01,5/17/2022,Media,"Los Gatos, CA",Post-IPO
+Netflix,NFLX,25,NA,4/28/2022,Media,"Los Gatos, CA",Post-IPO
+Roku,ROKU,200,0.07,11/17/2022,Media,"Los Gatos, CA",Post-IPO
+RingCentral,RNG,50,NA,8/4/2022,Software,"Belmont, CA",Post-IPO
+AppLovin,APP,300,0.12,6/29/2022,Software,"Palo Alto, CA",Post-IPO
+Spotify,SPOT,15,NA,3/30/2023,Media,"New York City, NY",Post-IPO
+Spotify,SPOT,600,0.06,1/23/2023,Media,"New York City, NY",Post-IPO
+Spotify,SPOT,38,NA,10/7/2022,Media,"New York City, NY",Post-IPO
+SiriusXM,SIRI,475,0.08,3/6/2023,Media,"New York City, NY",Post-IPO
+Toast,TOST,550,0.1,2/15/2024,Business,"Boston, MA",Post-IPO
+Amplitude,AMPL,99,0.13,4/5/2023,Services,"San Francisco, CA",Post-IPO
+Anaplan,PLAN,300,NA,6/21/2023,Software,"San Francisco, CA",Acquired
+LinkedIn,LNKD,660,0.03,10/16/2023,Social Related,"Sunnyvale, CA",Acquired
+Zillow,Z,23,NA,11/7/2023,Prop Tech,"Seattle, WA",Post-IPO
+Opendoor,OPEN,560,0.22,4/18/2023,Prop Tech,"San Francisco, CA",Post-IPO
+Redfin,RDFN,201,0.04,4/11/2023,Prop Tech,"Seattle, WA",Post-IPO
+Redfin,RDFN,1332,NA,11/9/2022,Prop Tech,"Seattle, WA",Post-IPO
+Opendoor,OPEN,550,0.18,11/2/2022,Prop Tech,"San Francisco, CA",Post-IPO
+Zillow,Z,300,0.05,10/26/2022,Prop Tech,"Seattle, WA",Post-IPO
+Compass,COMP,271,NA,9/21/2022,Prop Tech,"New York City, NY",Post-IPO
+Latch,LTCH,115,0.37,8/2/2022,Prop Tech,"New York City, NY",Post-IPO
+Compass,COMP,450,0.1,6/14/2022,Prop Tech,"New York City, NY",Post-IPO
+Redfin,RDFN,470,0.08,6/14/2022,Prop Tech,"Seattle, WA",Post-IPO
+Autodesk,ADSK,250,0.02,2/2/2023,Prop Tech,"San Rafael, CA",Post-IPO
+AppFolio,APPF,149,0.09,8/17/2023,Prop Tech,"Goleta, CA",Post-IPO
+AppFolio,APPF,62,NA,5/22/2023,Prop Tech,"Goleta, CA",Post-IPO
+Vacasa,VCSA,1300,0.17,1/24/2023,Business,"Portland, OR",Post-IPO
+WeWork,WEWOQ,300,NA,1/19/2023,Business,"New York City, NY",Post-IPO
+ZipRecruiter,ZIP,270,0.2,5/31/2023,Human Resources,"Santa Monica, CA",Post-IPO
+Shutterfly,SFLY,360,NA,1/25/2023,Business,"Redwood City, CA",Acquired
+Shutterfly,SFLY,246,NA,8/10/2023,Business,"Redwood City, CA",Acquired
+Uber,UBER,200,NA,6/21/2023,Services,"San Francisco, CA",Post-IPO
+Lyft,LYFT,700,0.13,11/3/2022,Travel,"San Francisco, CA",Post-IPO
+Lyft,LYFT,60,0.02,7/20/2022,Travel,"San Francisco, CA",Post-IPO
+Bird,BIRD,138,0.23,6/7/2022,Travel,"Santa Monica, CA",Post-IPO
+iRobot,IRBT,85,0.07,2/13/2023,Hardware,"Bedford, MA",Acquired
+Qualtrics,XM,270,0.05,1/11/2023,Software,"Seattle, WA",Acquired
+RingCentral,RNG,30,NA,1/17/2023,Software,"Belmont, CA",Post-IPO
+F5,FFIV,623,0.09,4/19/2023,Software,"Seattle, WA",Post-IPO
+F5,FFIV,120,0.02,11/3/2023,Software,"Seattle, WA",Post-IPO
+Palantir Technologies,PLTR,75,0.02,2/27/2023,Security,"Denver, CO",Post-IPO
+Marvell,MRVL,320,0.04,3/21/2023,Hardware,"Santa Clara, CA",Post-IPO
+Intel Corp,INTC,108,NA,7/11/2023,AI,"Santa Clara, CA",Post-IPO
+Synopsys,SNPS,100,NA,1/27/2023,Hardware,"Mountain View, CA",Post-IPO
+View,VIEW,170,0.23,4/3/2023,Services,"Milpitas, CA",Post-IPO
+Latch,LTCH,30,0.06,5/13/2022,Prop Tech,"New York City, NY",Post-IPO
+Snap,SNAP,500,0.1,2/5/2024,Social Related,"Venice, CA",Post-IPO
+Snap,SNAP,20,NA,11/8/2023,Social Related,"Venice, CA",Post-IPO
+Nextdoor,KIND,99,0.25,11/7/2023,Social Related,"San Francisco, CA",Unknown
+Snap,SNAP,150,NA,9/27/2023,Social Related,"Venice, CA",Post-IPO
+Grindr,GRND,82,0.46,9/7/2023,Social Related,"West Hollywood, CA",Unknown
+Twitter,TWTR,200,0.1,2/25/2023,Social Related,"San Francisco, CA",Post-IPO
+Twitter,TWTR,40,NA,1/5/2023,Social Related,"San Francisco, CA",Post-IPO
+Twitter,TWTR,3700,0.5,11/4/2022,Social Related,"San Francisco, CA",Post-IPO
+Snap,SNAP,1280,0.2,8/31/2022,Social Related,"Venice, CA",Post-IPO
+BuzzFeed,BZFD,180,0.15,4/20/2023,Media,"New York City, NY",Post-IPO
+BuzzFeed,BZFD,180,0.12,12/6/2022,Media,"New York City, NY",Post-IPO
+Pinterest,PINS,150,NA,2/1/2023,Social Related,"San Francisco, CA",Post-IPO
+Zebra Technologies,ZBRA,700,0.07,8/28/2023,Software,"Chicago, IL",Post-IPO
+Pear Therapeutics,PEARQ,170,0.92,4/7/2023,Software,"Boston, MA",Post-IPO
+Pear Therapeutics,PEARQ,25,0.09,7/25/2022,Software,"Boston, MA",Post-IPO
+DraftKings,DKNG,140,0.04,2/1/2023,Sports,"Boston, MA",Post-IPO
+Confluent,CFLT,221,0.08,1/26/2023,Media,"Mountain View, CA",Post-IPO
+Roku,ROKU,136,NA,10/26/2023,Media,"Los Gatos, CA",Post-IPO
+Roku,ROKU,360,0.1,9/6/2023,Media,"Los Gatos, CA",Post-IPO
+Roku,ROKU,200,0.06,3/30/2023,Media,"Los Gatos, CA",Post-IPO
+Qualcomm,QCOM,153,NA,12/22/2022,Telecommunication,"San Diego, CA",Post-IPO
+8x8,EGHT,155,0.07,1/18/2023,Telecommunication,"San Jose, CA",Post-IPO
+Shift,SFTGQ,490,1,10/6/2023,Travel,"San Francisco, CA",Unknown
+Inspirato,ISPOW,50,0.06,7/20/2023,Travel,"Denver, CO",Post-IPO
+Zoom,ZM,150,0.02,2/1/2024,Telecommunication,"San Jose, CA",Post-IPO
+Zoom,ZM,1300,0.15,2/7/2023,Telecommunication,"San Jose, CA",Post-IPO
+Wix,WIX,370,0.06,2/15/2023,Software,"San Francisco, CA",Post-IPO
+GoDaddy,GDDY,530,0.08,2/8/2023,Customer Relationship,"Scottsdale, AZ",Post-IPO
+Starry,STRYQ,100,0.24,1/18/2023,Telecommunication,"Boston, MA",Post-IPO
+Amazon,AMZN,150,NA,10/27/2023,Business,"Seattle, WA",Post-IPO
+Amazon,AMZN,9000,0.02,3/20/2023,Business,"Seattle, WA",Post-IPO
+Amazon,AMZN,8000,0.02,1/4/2023,Business,"Seattle, WA",Post-IPO
+Amazon,AMZN,10000,0.03,11/16/2022,Business,"Seattle, WA",Post-IPO
+Salesforce,CRM,NA,0.1,1/4/2023,Business,"San Francisco, CA",Post-IPO
+Salesforce,CRM,NA,0.01,11/7/2022,Business,"San Francisco, CA",Post-IPO
+Cisco,CSCO,NA,0.05,2/14/2024,Business,"San Jose, CA",Post-IPO
+Dell,DELL,NA,NA,8/7/2023,Hardware,"Round Rock, TX",Post-IPO
+DocuSign,DOCU,NA,0.09,9/28/2022,Services,"San Francisco, CA",Post-IPO
+Amdocs,DOX,NA,0.065,7/6/2023,Business,"Chesterfield, MO",Post-IPO
+eBay,EBAY,NA,0.09,1/23/2024,Business,"San Jose, CA",Post-IPO
+Expedia Group,EXPE,NA,NA,9/1/2023,Telecommunication,"Seattle, WA",Post-IPO
+Expedia,EXPE,NA,NA,7/17/2023,Travel,"Bellevue, WA",Post-IPO
+Expedia,EXPE,NA,NA,3/21/2023,Travel,"Bellevue, WA",Post-IPO
+GoDaddy,GDDY,NA,NA,10/23/2023,Software,"Scottsdale, AZ",Post-IPO
+Alphabet,GOOG,NA,NA,1/22/2024,Software,"Mountain View, CA",Post-IPO
+Alphabet,GOOG,NA,NA,1/16/2024,Software,"Mountain View, CA",Post-IPO
+Alphabet,GOOG,1000,NA,1/10/2024,Software,"Mountain View, CA",Post-IPO
+Alphabet,GOOG,NA,NA,11/8/2023,Software,"Mountain View, CA",Post-IPO
+Alphabet,GOOG,NA,NA,11/1/2023,Software,"Mountain View, CA",Post-IPO
+Alphabet,GOOG,75,NA,9/13/2023,Software,"Mountain View, CA",Post-IPO
+Alphabet,GOOG,NA,NA,7/31/2023,Software,"Mountain View, CA",Post-IPO
+Lyft,LYFT,NA,0.3,4/21/2023,Travel,"San Francisco, CA",Post-IPO
+Microsoft,MSFT,NA,NA,1/25/2024,Business,"Seattle, WA",Post-IPO
+Microsoft,MSFT,NA,NA,7/10/2023,Business,"Seattle, WA",Post-IPO
+Microsoft,MSFT,NA,0.01,7/11/2022,Business,"Seattle, WA",Post-IPO
+Netflix,NFLX,300,NA,6/23/2022,Media,"Los Gatos, CA",Post-IPO
+Invitae,NVTAQ,NA,0.15,12/15/2023,Biotech,"San Francisco, CA",Post-IPO
+Invitae,NVTAQ,NA,NA,12/13/2023,Biotech,"San Francisco, CA",Post-IPO
+Oracle,ORCL,NA,NA,1/17/2023,Software,"Austin, TX",Post-IPO
+Oracle,ORCL,NA,NA,8/1/2022,Software,"Austin, TX",Post-IPO
+Peloton,PTON,NA,0.3,10/6/2022,Fitness,"New York City, NY",Post-IPO
+Peloton,PTON,NA,0.2,2/8/2022,Fitness,"New York City, NY",Post-IPO
+Paypal,PYPL,NA,0.09,1/30/2024,Finance,"San Jose, CA",Post-IPO
+Paypal,PYPL,NA,0.07,1/31/2023,Finance,"San Jose, CA",Post-IPO
+Zebra Technologies,ZBRA,NA,0.03,7/24/2023,Software,"Lincolnshire, IL",Post-IPO
+Wayfair,W,NA,0.19,11/19/2023,Business,"Boston, MA",Post-IPO
+Uber Freight,UBER,NA,NA,1/9/2024,Logistics,"San Francisco, CA",Subsidiary
+Uber Freight,UBER,150,0.03,1/23/2023,Logistics,"San Francisco, CA",Subsidiary
+Twilio,TWLO,NA,0.17,2/13/2023,Business,"San Francisco, CA",Post-IPO
+Spotify,SPOT,NA,0.17,12/5/2023,Media,"New York City, NY",Post-IPO
+Sonos,SONO,NA,NA,11/15/2023,Consumer,"Santa Barbara, CA",Post-IPO
+Shopify,SHOP,NA,0.2,5/4/2023,Business,"San Francisco, CA",Post-IPO
+Stitch Fix,SFIX,NA,NA,1/18/2024,Business,"San Francisco, CA",Post-IPO
+Stitch Fix,SFIX,NA,0.2,1/5/2023,Business,"San Francisco, CA",Post-IPO
+RingCentral,RNG,NA,0.1,11/19/2022,Software,"Belmont, CA",Post-IPO
+Qualcomm,QCOM,NA,NA,10/12/2023,Telecommunication,"San Diego, CA",Post-IPO

@@ -1,0 +1,1355 @@
+---
+title: "2017-2021 ATP Tour: Finding Out How Each Variables Affect Performance"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+library(tidyverse)
+library(lubridate)
+options(warn = -1)
+```
+
+
+## Introduction
+
+As an avid tennis fans, we have grown up idolizing the iconic Big Three of the Open Era: Roger Federer, Rafael Nadal, and Novak Djokovic. These are among the best tennis players who stand to make fortunes for their performance. But what defines best? Many variables need to be evaluated to determine if player skill reflects specific biological differences, talent, or both. In this project, we have decided to take sample data sets of the top-tier men’s tennis tournaments and evaluate multiple variables to see if they make a difference in player performance. These are our questions of interest:
+
+  1. How does the handedness of tennis players affect their chances of winning on different court surfaces?
+  2. Do taller tennis players fare better compared to shorter tennis players?
+  3. Does age affect performance?
+  4. What do match statistics tell us about the ability of winners and losers?
+  
+We believe a pattern exists between these biological elements (handedness, height, and age) and player performance and that the best players have an inherent advantage due to these variables. By using match statistics to measure player performance, we believe the winners will have higher percentage of first/second serve points won and break points saved in addition to lower number of break points faced.
+
+
+## Background
+ 
+> **Some information about tennis and ATP in general:**
+
+Tennis is a racket sport that can be played individually (singles) or with a partner (doubles). Players are given the freedom to hold the racket using any hand they feel is comfortable. The objective of tennis is reasonably straightforward: hit the ball so that the opponent cannot play a valid return, in the process winning a point. Generally, four points win a game, while six games win a set. Most tennis matches are played in a best-of-three format, which means that players need to win two sets to be victorious. Grand Slams, however, tend to be longer. Men play best-of-five sets, whereas women play best-of-three sets.    
+
+The Association of Tennis Professionals (ATP) is a sports association of the world's best men’s players. Throughout the year, ATP organizes many tournaments that are played on different court surfaces: grass, hard, or clay. Ranking points are awarded to the players according to the stage of the tournament reached and the prestige of the tournament. Up-and-coming rookies such as Carlos Alcaraz (aged 18) and Felix Auger-Aliassime (aged 21) have recently been the talk of the tennis world due to their impressive performances in the ATP tournaments, racking up a lot of points and consequently placing them in the top ten. Nevertheless, we could still see veteran tennis players like 40-year-old Roger Federer and 36-year-old John Isner doing decently well against their peers or the youths.     
+
+
+> **Our plans:**
+
+In this report, we examine the singles tennis matches played on the ATP Tour – the top-tier tennis tour – to obtain conclusive evidence on whether factors such as handedness and court surfaces on top of age affect performance. As many tennis analysts have stated that height is a major determinant of a player’s success, we would also like to examine to what extent this variable impacts the players’ chances of being victorious against his opponent. In addition, we are interested in exploring the relationship between the various match statistics (number of first/second serves won and percentage of break points faced and saved) with the outcome of the match. To carry out our analysis and draw satisfactory conclusions to our questions of interest, we will graph the data using various plots within the tidyverse package that we think is appropriate. We will also carry out 95% confidence intervals and hypothesis tests to determine the statistical significance of our findings. On top of that, we plan to calculate the correlation between variables to measure the degree of relationship.
+
+```{r, include = FALSE}
+atp_2017 = read_csv("atp_matches_2017.csv") %>% 
+  mutate(year = "2017")
+atp_2018 = read_csv("atp_matches_2018.csv") %>% 
+  mutate(year = "2018")
+atp_2019 = read_csv("atp_matches_2019.csv") %>% 
+  mutate(year = "2019")
+atp_2020 = read_csv("atp_matches_2020.csv") %>% 
+  mutate(year = "2020")
+atp_2021 = read_csv("atp_matches_2021.csv") %>% 
+  mutate(year = "2021")
+
+atp_tour = bind_rows(atp_2017, atp_2018, atp_2019, atp_2020, atp_2021)
+rm(atp_2017, atp_2018, atp_2019, atp_2020, atp_2021)
+
+
+atp_tour = atp_tour %>%
+  filter(!(score == "Walkover" | score == "W/O" | grepl("RET", score)))
+
+```
+
+
+> **The 2017-2021 ATP Tour Matches data sets:** 
+  
+The ATP Tour data dates back to 1968 and continues through the present. For our convenience, we would like to analyze five years of the latest ATP Tour tennis matches from 2017 through 2021, the last complete year. The data sets contain 12776 elements in total, where each observation represents information about a given match between 2 players. We obtained the data sets in raw CSV format from a GitHub repository created by Jeff Sackmann and are available for download [here](https://github.com/JeffSackmann/tennis_atp). As a tennis fan, the author has been collecting tennis data (both ATP and WTA) from the inauguration of the Open Era until the present. The data was obtained directly from ATP to provide a record of their previous matches to create an accurate ranking system. Sackmann ensured many variables in his data collection, making the data sets very comprehensive and convenient for exploratory data analysis.
+
+There is a great deal of missing data for the **winner_seed**, **winner_entry**, **loser_seed**, and **loser_entry** variables; however, this will not affect our analyses as those elements will not be used. On top of that, we will not consider the matches where the player won by walkover, or the loser decided to retire halfway through. In other words, we will only consider complete matches. Filtering these out will leave us with 12385 observations. In addition, we want to note that fewer observations for the 2020 ATP Tour are due to tournaments from the 9th of March to the 21st of August being either canceled or postponed. At a glance, we plan to focus on these variables: **surface**, **tourney_level**, **winner_hand**, **loser_hand**, **winner_ht**, **loser_ht**, **winner_age**, **loser_age**, **w_ace**, **w_svpt**, **w_1stIn**, **w_1stWon**, **w_2ndWon**, **w_bpSaved**, **w_bpFaced**, **l_ace**, **l_svpt**, **l_1stIn**, **l_1stWon**, **l_2ndWon**, **l_bpSaved**, and **l_bpFaced**. 
+
+
+```{r, echo = FALSE}
+library(kableExtra)
+
+atp_matches_variables = tibble(
+  Variables = c("surface", "tourney_level", "winner_hand", "loser_hand", "winner_ht", "loser_ht", 
+                "winner_age", "loser_age","w_ace", "w_svpt", "w_1stIn", "w_1stWon", "w_2ndWon", 
+                "w_bpSaved", "w_bpFaced", "l_ace","l_svpt", "l_1stIn", "l_1stWon", "l_2ndWon", "l_bpSaved", "l_bpFaced"),
+  Description = c("Type of tennis court surface (Hard, Clay, or Grass)",
+                  "Tournament level",
+                  "The hand used by the winner (R or L)",
+                  "The hand used by the loser (R or L)",
+                  "Winner's height (cm)",
+                  "Loser's height (cm)",
+                  "Winner's age as of tournament date (years)",
+                  "Loser's age as of tournament date (years)",
+                  "Winner's number of aces",
+                  "Winner's number of serve points",
+                  "Winner's number of first serves made",
+                  "Winner's number of first-serve points won",
+                  "Winner's number of second-serve points won",
+                  "Winner's number of break points saved",
+                  "Winner's number of break points faced",
+                  "Loser's number of aces",
+                  "Loser's number of serve points",
+                  "Loser's number of first serves made",
+                  "Loser's number of first-serve points won",
+                  "Loser's number of second-serve points won",
+                  "Loser's number of break points saved",
+                  "Loser's number of break points faced"))
+
+atp_matches_variables %>% 
+  kable(caption = "Key Variables from the ATP Tour Matches datasets") %>% 
+  kable_styling(position = "left", full_width = FALSE,
+                bootstrap_options = c("striped"))
+
+```
+
+
+## Analysis
+
+> **Tennis analysts say that handedness of players have an effect on their performance based on different court surfaces. Which courts do left-handed/right-handed players play better in, and is there a significant difference?**
+
+For the first part of this project, we want to specifically look into how handedness of players affect their performance on different court surfaces. We will graph two scatter plots that will be faceted by court surfaces. Then, we will carry out hypothesis tests to compute the significance of the difference in winning percentage on different surfaces. 
+
+
+##### **Graphs: The Percentage of Wins of Left-handed and Right-handed Players on Different Court Surfaces** 
+
+**1. Outcome of Matches between Top 100 Left-handed and Right-handed Players on Different Court Surfaces over the Last Five Years**
+
+We filter out matches where both players are either right-handed or left-handed or either one of the players' handedness is unknown. We also filter out players that are not ranked 1-100. We then calculate the winning percentage. Unfortunately, there is not a match played between two top 100 players on grass courts for the year of 2020. Thus, the grass panel does not fully represent an accurate representation of winning percentage between top 100 left-handed and right-handed players. 
+
+```{r, echo = FALSE, fig.height = 7, fig.width = 10}
+left_vs_right_top_100 = atp_tour %>%
+  select(year, surface, winner_hand, loser_hand, winner_rank, loser_rank) %>% 
+  filter((winner_hand == "R" & loser_hand == "L") | (winner_hand == "L" & loser_hand == "R")) %>% 
+  filter((winner_rank <= 100)) %>% 
+  filter((loser_rank <= 100))
+
+
+sum_lvr_100 = left_vs_right_top_100 %>%
+  group_by(year, surface) %>%
+  summarize(winner_right = sum(winner_hand == "R")/n() * 100, winner_left = sum(winner_hand == "L")/n() * 100) %>% 
+  pivot_longer(cols = starts_with("winner"), names_to = "winner_hand", values_to = "win_pct") %>% 
+  mutate(winner_hand = case_when(
+    winner_hand == "winner_right" ~ "right",
+    winner_hand == "winner_left" ~ "left"
+  ))
+
+r_sum_lvr_100 = sum_lvr_100 %>% 
+  filter(winner_hand == "right")
+
+l_sum_lvr_100 = sum_lvr_100 %>% 
+  filter(winner_hand == "left")
+
+ggplot() +
+  geom_line(data = r_sum_lvr_100, aes(x = year, y = win_pct, group = 1), color = "#48d1cc", size = 1) +
+  geom_line(data = l_sum_lvr_100, aes(x = year, y = win_pct, group = 1), color = "salmon", size = 1) +
+  geom_point(data = r_sum_lvr_100, aes(x = year, y = win_pct, group = 1, color = winner_hand), size = 2) +
+  geom_point(data = l_sum_lvr_100, aes(x = year, y = win_pct, group = 1, color = winner_hand), size = 2) +
+  facet_wrap(~surface) +
+  scale_colour_discrete("Winner's Hand") +
+  ylab("Percentage of Wins (%)") +
+  xlab("Year") +
+  ggtitle("Top 100 Left-handed Tennis Players vs Right-handed Tennis Players on Different Court Surfaces",
+          subtitle = "2017-2021") +
+  theme_bw()
+
+```
+
+Throughout the five years (2017-2021) of observed data, we could see that the trends of the top 100 tennis players' performance on clay courts and hard courts are generally consistent. Each year, left-handed players in the top 100 have a slightly higher win percentage on clay courts, whereas right-handed players in the top 100 tend to dominate on hard courts. On the other hand, we see an interesting pattern for grass surface courts. The top 100 left-handed players have a much higher win percentage back in 2017, but their performance gradually decline. From 2018 to 2021, the top 100 right-handed players have been more victorious than the top 100 left-handed players on grass courts. 
+
+We would like to observe whether the pattern is the same when we include all players.
+
+
+**2. Win Percentage of All Left-handed and Right-Handed Players on Different Court Surfaces over the Last Five Years**
+
+We utilize the same formula to get the winning percentage based on handedness over the last five years as the previous graph. The difference is that we do not filter out players according to their respective rank.   
+
+```{r, echo = FALSE, fig.height = 7, fig.width = 10}
+
+left_vs_right = atp_tour %>%
+  select(year, surface, winner_hand, loser_hand) %>% 
+  filter((winner_hand == "R" & loser_hand == "L") | (winner_hand == "L" & loser_hand == "R"))
+
+
+sum_lvr = left_vs_right %>%
+  group_by(year, surface) %>%
+  summarize(winner_right = sum(winner_hand == "R")/n() * 100, winner_left = sum(winner_hand == "L")/n() * 100) %>% 
+  pivot_longer(cols = starts_with("winner"), names_to = "winner_hand", values_to = "win_pct") %>% 
+  mutate(winner_hand = case_when(
+    winner_hand == "winner_right" ~ "right",
+    winner_hand == "winner_left" ~ "left"
+  ))
+
+r_sum_lvr = sum_lvr %>% 
+  filter(winner_hand == "right") %>% 
+  filter(!(year == 2020 & surface == "Grass"))
+
+l_sum_lvr = sum_lvr %>% 
+  filter(winner_hand == "left") %>% 
+  filter(!(year == 2020 & surface == "Grass"))
+
+ggplot() +
+  geom_line(data = r_sum_lvr, aes(x = year, y = win_pct, group = 1), color = "#48d1cc", size = 1) +
+  geom_line(data = l_sum_lvr, aes(x = year, y = win_pct, group = 1), color = "salmon", size = 1) +
+  geom_point(data = r_sum_lvr, aes(x = year, y = win_pct, group = 1, color = winner_hand), size = 2) +
+  geom_point(data = l_sum_lvr, aes(x = year, y = win_pct, group = 1, color = winner_hand), size = 2) +
+  facet_wrap(~surface) +
+  scale_colour_discrete("Winner's Hand") +
+  ylab("Percentage of Wins (%)") +
+  xlab("Year") +
+  ggtitle("Left-handed Tennis Players vs Right-handed Tennis Players on Different Court Surfaces",
+          subtitle = "2017-2021") +
+  theme_bw()
+
+
+```
+
+It appears that we obtain a fairly similar result as what we have in the previous comparison. Throughout the five years (2017-2021), right-handed tennis players have a higher winning percentage compared to left-handed tennis players on hard surfaces except in 2020, where right-handed and left-handed tennis players have equivalent winning percentage. We could say the same for the matches played on clay courts, whereby left-handed players perform better than right-handed players except in 2019. The trend of winning percentage on grass courts looks very similar to the graph we plotted with the top 100 players only (with the exception of 2020, which we do not consider to be a valid representation).  
+
+
+---
+
+##### **Hypothesis Tests: Is There Actually a Difference in Performance on Different Court Surfaces Based on Handedness?**
+
+Now that we have graphically established the potential advantage handedness brings on different court surfaces, we would like to conduct three hypothesis tests (one for clay, one for grass, and one for hard, respectively) to see whether handedness actually does make a difference in performance on each court surface.     
+
+Firstly, we will carry out a hypothesis test for the performance of left/right-handed players on clay surfaces.
+
+
+**1. Performance of Left/Right-handed Players on Clay Surfaces** 
+
+**Statistical Model**
+
+We make the assumption that the proportion of wins by handedness are equivalent on every court surface. Therefore, the model we will be using is:
+
+- $p_{R_C}$ is the proportion of wins of right-handed players on clay surfaces 
+- $p_{L_C}$ is the proportion of wins of left-handed players on clay surfaces
+
+$$
+X_1 \mid p_{R_C} \sim \text{Binomial}(1026,p_{R_C}) \\
+X_2 \mid p_{L_C} \sim \text{Binomial}(1026,p_{L_C})    
+$$
+
+
+**Hypotheses**
+
+$$
+H_0: p_{R_C} = p_{L_C} \\
+H_a: p_{R_C} \neq p_{L_C}
+$$
+
+
+**Test Statistic**
+
+```{r, include=FALSE}
+left_win_clay = left_vs_right %>%
+  filter(surface == "Clay") %>% 
+  summarize(winner_left = sum(winner_hand == "L"), loser_left = sum(loser_hand == "L"), total = winner_left + loser_left)
+
+right_win_clay = left_vs_right %>%
+  filter(surface == "Clay") %>%
+  summarize(winner_right = sum(winner_hand == "R"), loser_right = sum(loser_hand == "R"), total = winner_right + loser_right)
+
+
+n_right_clay = right_win_clay %>% pull(total)
+n_left_clay = left_win_clay %>% pull(total)
+x_right_clay = right_win_clay %>% pull(winner_right)
+x_left_clay = left_win_clay %>% pull(winner_left)
+
+
+tstat_handedness_clay = (x_right_clay/n_right_clay) - (x_left_clay/n_left_clay)
+p0_clay = (x_right_clay + x_left_clay)/(n_right_clay + n_left_clay)
+se_win_handedness_clay = sqrt( p0_clay*(1-p0_clay)/n_right_clay + p0_clay*(1-p0_clay)/n_left_clay)
+
+z_handedness_clay = tstat_handedness_clay / se_win_handedness_clay
+z_handedness_clay
+
+```
+
+- Observed z-value: $z_{obs} = `r round(z_handedness_clay,2)`$
+
+
+**p-value Calculation**
+
+```{r, include = FALSE}
+pvalue_handedness_clay = 2*pnorm(-abs(z_handedness_clay))
+pvalue_handedness_clay
+
+```
+
+- Observed p-value: $p_{obs} =  0.112$
+
+
+**Interpretation**
+
+- There is insufficient evidence that handedness makes a tangible or predictable difference in win percentages on clay surfaces among ATP Tour tennis players (p = 0.112, z-test for difference in proportions).
+
+Next, we would like to repeat the same hypothesis test for performance of left/right-handed players on grass surfaces. 
+
+
+**2. Performance of Left/Right-handed Players on Grass Surfaces**
+
+**Statistical Model**
+
+The model we will be using is:
+
+- $p_{R_G}$ is the proportion of wins of right-handed players on grass surfaces 
+- $p_{L_G}$ is the proportion of wins of left-handed players on grass surfaces
+
+$$
+X_1 \mid p_{R_G} \sim \text{Binomial}(325, p_{R_G}) \\
+X_2 \mid p_{L_G} \sim \text{Binomial}(325, p_{L_G})    
+$$
+
+
+**Hypotheses**
+
+$$
+H_0: p_{R_G} = p_{L_G} \\
+H_a: p_{R_G} \neq p_{L_G}
+$$
+
+
+**Test Statistic**
+
+```{r, include=FALSE}
+left_win_grass = left_vs_right %>%
+  filter(surface == "Grass") %>% 
+  summarize(winner_left = sum(winner_hand == "L"), loser_left = sum(loser_hand == "L"), total = winner_left + loser_left)
+
+right_win_grass = left_vs_right %>%
+  filter(surface == "Grass") %>%
+  summarize(winner_right = sum(winner_hand == "R"), loser_right = sum(loser_hand == "R"), total = winner_right + loser_right)
+
+
+n_right_grass = right_win_grass %>% pull(total)
+n_left_grass = left_win_grass %>% pull(total)
+x_right_grass = right_win_grass %>% pull(winner_right)
+x_left_grass = left_win_grass %>% pull(winner_left)
+
+
+tstat_handedness_grass = (x_right_grass/n_right_grass) - (x_left_grass/n_left_grass)
+p0_grass = (x_right_grass + x_left_grass)/(n_right_grass + n_left_grass)
+se_win_handedness_grass = sqrt(p0_grass*(1-p0_grass)/n_right_grass + p0_grass*(1-p0_grass)/n_left_grass)
+
+z_handedness_grass = tstat_handedness_grass / se_win_handedness_grass
+z_handedness_grass
+
+```
+
+- Observed z-value: $z_{obs} = `r round(z_handedness_grass,2)`$
+
+
+**p-value Calculation**
+
+```{r, include = FALSE}
+pvalue_handedness_grass = 2*pnorm(-abs(z_handedness_grass))
+pvalue_handedness_grass
+
+```
+
+- Observed p-value: $p_{obs} =  0.4802$
+
+
+**Interpretation**
+
+- The evidence is consistent with there being no tangible or predictable difference in the percentage of wins on grass surfaces based on players’ handedness (p = 0.4802, z-test for difference in proportions).
+
+We now know that handedness does not affect the ATP Tour tennis players' performance on grass and court surfaces, but can we say the same for their performance on hard surfaces?
+
+
+**3. Performance of Left/Right-handed Players on Hard Surfaces**
+
+**Statistical Model**
+
+The model we will be using is:
+
+- $p_{R_H}$ is the proportion of wins of right-handed players on hard surfaces 
+- $p_{L_H}$ is the proportion of wins of left-handed players on hard surfaces
+
+$$
+X_1 \mid p_{R_H} \sim \text{Binomial}(1636, p_{R_H}) \\
+X_2 \mid p_{L_H} \sim \text{Binomial}(1636, p_{L_H})    
+$$
+
+
+**Hypotheses**
+
+$$
+H_0: p_{R_H} = p_{L_H} \\
+H_a: p_{R_H} \neq p_{L_H}
+$$
+
+
+**Test Statistic**
+
+```{r, include=FALSE}
+left_win_hard = left_vs_right %>%
+  filter(surface == "Hard") %>% 
+  summarize(winner_left = sum(winner_hand == "L"), loser_left = sum(loser_hand == "L"), total = winner_left + loser_left)
+
+right_win_hard = left_vs_right %>%
+  filter(surface == "Hard") %>%
+  summarize(winner_right = sum(winner_hand == "R"), loser_right = sum(loser_hand == "R"), total = winner_right + loser_right)
+
+
+n_right_hard = right_win_hard %>% pull(total)
+n_left_hard = left_win_hard %>% pull(total)
+x_right_hard = right_win_hard %>% pull(winner_right)
+x_left_hard = left_win_hard %>% pull(winner_left)
+
+
+tstat_handedness_hard = (x_right_hard/n_right_hard) - (x_left_hard/n_left_hard)
+p0_hard = (x_right_hard + x_left_hard)/(n_right_hard + n_left_hard)
+se_win_handedness_hard = sqrt( p0_hard*(1-p0_hard)/n_right_hard + p0_hard*(1-p0_hard)/n_left_hard)
+
+z_handedness_hard = tstat_handedness_hard / se_win_handedness_hard
+z_handedness_hard
+
+```
+
+- Observed z-value: $z_{obs} = `r round(z_handedness_hard,2)`$
+
+
+**p-value Calculation**
+
+```{r, include = FALSE}
+pvalue_handedness_hard = 2*pnorm(-abs(z_handedness_hard))
+pvalue_handedness_hard
+
+```
+
+- Observed p-value: $p_{obs} =  1.4e-06$
+
+
+**Interpretation**
+
+- There is significant evidence that handedness makes a tangible or predictable difference in win percentages on hard surfaces among ATP Tour tennis players (p = 1.4e-06, z-test for difference in proportions).
+
+- Since the p-value is 1.4e-06 - which is in favor of the alternative hypothesis - it is likely that right-handed tennis players have a higher chance of winning on hard surfaces than the left-handed tennis players.
+
+- This is an intriguing observation. We would think that since handedness has no significant impact on player performance on the previous two surfaces, it would also have insignificant effect on percentage of wins on hard surfaces. Clearly, that is not the case.    
+
+
+> **The conventional wisdom is that height is an advantage, but to what point?**
+
+##### **General Overview**
+
+For the second part, we wish to understand how advantageous/disadvantageous it is to possess the height factor in ATP Tour tennis matches. We will first graph three scatter plots to have a general overview of how height influences the outcome of tennis matches before conducting an in-depth analysis of in-game performances. We add a local linear regression line in each of the three graphs to show the trend.  
+
+
+**1. Height versus Games Won (Grand Slams Only)**
+
+Firstly, we count the wins by height and losses by height separately. Then, we combine these two data frames and calculate the percentage of wins by each height before graphing the data. 
+
+```{r, echo = FALSE, fig.height = 7}
+
+winners_height_grandslam = atp_tour %>%
+  filter(tourney_level == "G") %>% 
+  group_by(winner_ht) %>% 
+  summarize(wins = n()) %>% 
+  drop_na()
+
+
+losers_height_grandslam = atp_tour %>%
+  filter(tourney_level == "G") %>%
+  group_by(loser_ht) %>% 
+  summarize(losses = n()) %>% 
+  drop_na()
+
+
+sum_height_grandslam = winners_height_grandslam %>% 
+  full_join(losers_height_grandslam, by = c("winner_ht" = "loser_ht")) %>% 
+  mutate(percentage_wins = wins / (wins + losses) * 100) %>% 
+  rename(., height = winner_ht)
+
+
+ggplot(sum_height_grandslam, aes(x = height, y = percentage_wins)) +
+  geom_point() +
+  geom_smooth(se = FALSE, size= 1, method = "loess", color="red") +
+  theme_bw() +
+  xlab("Height (cm)") +
+  ylab("Percentage of Wins (%)") +
+  ggtitle("Height vs. Winning Percentage (Grand Slams Only)")
+
+```
+
+It appears that there is generally a positive relationship between height versus winning percentage in Grand Slam tournaments from 170 cm until around 203 cm, then the winning rate of the tallest players gradually declines.
+
+We can also observe that there is variability in the percentage of wins for the shorter players (< 190 cm), where players that are 170 cm or 185 cm tall have very high winning percentages, respectively, but players with stature between 170 cm and 185 cm have moderate to low winning rates. Next, we carry out the same analysis on all tournaments to test the consistency of this finding.
+
+
+**2. Height versus Games Won (All Tournaments)**
+
+We use the same method as the graph above to get the numbers of wins and losses by height in addition to the percentage of wins by height. The only exception is that this time, we include observations from all tournaments.
+
+```{r, echo = FALSE, fig.height = 7}
+
+winners_height_general = atp_tour %>%
+  group_by(winner_ht) %>% 
+  summarize(wins = n()) %>% 
+  drop_na()
+
+
+losers_height_general = atp_tour %>%
+  group_by(loser_ht) %>% 
+  summarize(losses = n()) %>% 
+  drop_na()
+
+
+sum_height_general = winners_height_general %>% 
+  full_join(losers_height_general, by = c("winner_ht" = "loser_ht")) %>% 
+  mutate(percentage_wins = wins / (wins + losses) * 100) %>% 
+  rename(., height = winner_ht)
+
+
+ggplot(sum_height_general, aes(x = height, y = percentage_wins)) +
+  geom_point() +
+  geom_smooth(se = FALSE, size= 1, method = "loess", color="magenta") +
+  theme_bw() +
+  ylim(25, 65) +
+  xlab("Height (cm)") +
+  ylab("Percentage of Wins (%)") +
+  ggtitle("Height vs. Winning Percentage (All Tournaments)")
+
+```
+
+Players that are 173cm, 181cm, and 191cm in height have much higher percentage of wins when we consider all tournaments instead of just the Grand Slams. However, the trend of the LOESS curve in this graph looks very similar to the trend of the LOESS curve in the previous Height vs. Percentage of Wins (Grand Slams Only) graph. This implies a similar degree of importance in having the height advantage in any ATP Tour tournaments. 
+
+These two analyses are very general as we did not consider the environment the tennis matches are played in. Therefore, we would like to observe next how big of a factor height is when ATP matches are played on different court surfaces instead of generally graphing the winning percentage against the stature of players.
+
+
+**3. Height versus Games Won (Different Court Surfaces)**
+
+Since the data on matches played on Carpet surfaces is insufficient/incomplete, we filter those matches out. We focus only on the three main court surfaces: clay, grass, and hard. The same method is used as in the previous graphs.
+
+```{r, echo = FALSE, fig.height= 7}
+winners_height_court = atp_tour %>%
+  select(surface, winner_ht) %>% 
+  group_by(surface, winner_ht) %>% 
+  summarize(wins = n()) %>% 
+  drop_na()
+
+losers_height_court = atp_tour %>%
+  select(surface, loser_ht) %>% 
+  group_by(surface, loser_ht) %>% 
+  summarize(losses = n()) %>% 
+  drop_na()
+
+sum_height_court = winners_height_court %>% 
+  full_join(losers_height_court, by = c("winner_ht" = "loser_ht", "surface")) %>% 
+  mutate(percentage_wins = wins / (wins + losses) * 100) %>% 
+  rename(., height = winner_ht) %>% 
+  drop_na() %>% 
+  filter(surface != "Carpet")
+
+ggplot(sum_height_court, aes(x = height, y = percentage_wins)) +
+  facet_wrap(~surface) +
+  geom_point() +
+  geom_smooth(aes(color = surface), method = "loess", se = FALSE, size= 1) +
+  theme_bw() +
+  theme(legend.position="none") +
+  xlab("Height (cm)") +
+  ylab("Percentage of Wins (%)") +
+  ggtitle("Height vs. Winning Percentage (By Court Surfaces)")
+
+
+```
+
+Creating different panels for the court surfaces gives us a clearer picture of how height affects the winning percentage. The trend for all three facets looks reasonably similar to the two more general graphs above, whereby there is a certain peak for height and winning percentage, and then the trend declines. However, on grass surfaces, the winning percentage trend drastically declines for the tallest players compared to the winning rates of the tallest players on the other two court surfaces.  
+
+
+---
+
+##### **The Influence of Height on Service Performance**
+
+Now, we aim to analyze how the height variable impacts an ATP tennis match between two professional tennis players. Notably, we will look into the service-related parameters such as the ace hit rate, percentage of first serves won, and the percentage of second serves won. Similar to the three graphs above, we will create scatter plots between height and the service-related variables in addition to conducting a linear regression analysis to examine the possible influence of height on the selected elements.
+
+
+**1. Height versus Ace Hit Rate**
+
+We first total up the aces made and the number of serve points separately according to the winner's/loser's height. We then join the data frames together and calculate the ace hit rate with this formula:
+
+- Ace hit rate = (Total number of aces [Winners + Losers]) / (Total number of serve points [Winners + Losers]) * 100  
+
+```{r, echo = FALSE, fig.height = 7}
+
+winner_ace_rate = atp_tour %>%
+  select(winner_ht, w_ace, w_svpt) %>% 
+  drop_na() %>% 
+  group_by(winner_ht) %>% 
+  summarize(w_ace = sum(w_ace), w_svpt = sum(w_svpt))
+  
+
+loser_ace_rate = atp_tour %>%
+  select(loser_ht, l_ace, l_svpt) %>% 
+  drop_na() %>% 
+  group_by(loser_ht) %>% 
+  summarize(l_ace = sum(l_ace), l_svpt = sum(l_svpt))
+
+
+ace_rate = winner_ace_rate %>%
+  full_join(loser_ace_rate,  by = c("winner_ht" = "loser_ht")) %>% 
+  rename(., height = winner_ht) %>% 
+  mutate(ace_hit_rate = (w_ace + l_ace) / (w_svpt + l_svpt) * 100)
+
+
+ggplot(ace_rate, aes(x = height, y = ace_hit_rate)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method="lm", size= 1, color="coral2") +
+  theme_bw() +
+  xlab("Height (cm)") +
+  ylab("Ace Hit Rate (%)") +
+  ggtitle("Height vs. Ace Hit Rate")
+  
+```
+
+```{r, include = FALSE}
+cor(ace_rate$ace_hit_rate, ace_rate$height)
+```
+
+The graph exhibits a very strong linear relationship (r = 0.9204163). All points seem to conform with the linear model. Thus, we could say that the ace hit rate increases with height. Nonetheless, aces do not tell the whole story. We have to look into the serves itself.
+
+
+**2. Height versus Percentage of First Serves Won**
+
+We first total up the first-serve points won and the number of first serves made separately according to the winner's/loser's height. We then join the data frames together and calculate the percentage of first serves won with this formula:
+
+- Percentage of First Serves Won = (Total number of first-serve points won [Winners + Losers]) / 
+                                   (Total number of first serves made [Winners + Losers]) * 100 
+                                   
+```{r, echo = FALSE, fig.height = 7}
+
+winner_pct_1st_won = atp_tour %>%
+  select(winner_ht, w_1stWon, w_1stIn) %>% 
+  drop_na() %>% 
+  group_by(winner_ht) %>% 
+  summarize(w_1stWon = sum(w_1stWon), w_1stIn = sum(w_1stIn))
+  
+
+loser_pct_1st_won = atp_tour %>%
+  select(loser_ht, l_1stWon, l_1stIn) %>% 
+  drop_na() %>% 
+  group_by(loser_ht) %>% 
+  summarize(l_1stWon = sum(l_1stWon), l_1stIn = sum(l_1stIn))
+
+
+pct_1st_won = winner_pct_1st_won %>%
+  full_join(loser_pct_1st_won,  by = c("winner_ht" = "loser_ht")) %>% 
+  rename(., height = winner_ht) %>% 
+  mutate(pct_first_serve_won = (w_1stWon + l_1stWon) / (w_1stIn + l_1stIn) * 100)
+
+
+ggplot(pct_1st_won, aes(x = height, y = pct_first_serve_won)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method="lm", size= 1, color="cyan3") +
+  theme_bw() +
+  xlab("Height (cm)") +
+  ylab("Percentage of First Serve Points Won (%)") +
+  ggtitle("Height vs. Percentage of First Serves Won")
+  
+```
+
+```{r, include = FALSE}
+cor(pct_1st_won$pct_first_serve_won, pct_1st_won$height)
+```
+
+We can also see a positive trend between the player's height and the percentage of first serves won. Our calculation for the correlation coefficient is r = 0.9220615, which is similar to the height versus ace hit rate relationship, indicating that this is also a strong linear relationship. Therefore, as height increases, we could confidently say that the percentage of winning points from the first serve also increases. 
+
+We would like to see whether the trend is as strong for the percentage of second serves won.
+
+
+**3. Height versus Percentage of Second Serves Won**
+
+We use a similar formula to our previous analysis. Since we do not have data on the number of second serves made, We can manually calculate this variable by subtracting the number of first serves made from the total serve points. 
+
+```{r, echo = FALSE, fig.height = 7}
+
+winner_pct_2nd_won = atp_tour %>%
+  select(winner_ht, w_2ndWon, w_1stIn, w_svpt) %>% 
+  drop_na() %>% 
+  group_by(winner_ht) %>% 
+  summarize(w_2ndWon = sum(w_2ndWon), w_2ndIn = sum(w_svpt - w_1stIn))
+  
+
+loser_pct_2nd_won = atp_tour %>%
+  select(loser_ht, l_2ndWon, l_1stIn, l_svpt) %>% 
+  drop_na() %>% 
+  group_by(loser_ht) %>% 
+  summarize(l_2ndWon = sum(l_2ndWon), l_2ndIn = sum(l_svpt - l_1stIn))
+
+
+pct_2nd_won = winner_pct_2nd_won %>%
+  full_join(loser_pct_2nd_won,  by = c("winner_ht" = "loser_ht")) %>% 
+  rename(., height = winner_ht) %>% 
+  mutate(pct_second_serve_won = (w_2ndWon + l_2ndWon) / (w_2ndIn + l_2ndIn) * 100)
+
+
+ggplot(pct_2nd_won, aes(x = height, y = pct_second_serve_won)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method="lm", size= 1, color="limegreen") +
+  theme_bw() +
+  xlab("Height (cm)") +
+  ylab("Percentage of Second Serve Points Won (%)") +
+  ggtitle("Height vs. Winning Percentage of Second Serves")
+  
+```
+
+```{r, include = FALSE}
+cor(pct_2nd_won$pct_second_serve_won, pct_2nd_won$height)
+```
+
+This is a very interesting graph. Although there is still a positive trend, having the height advantage is not nearly as beneficial to the taller player. The percentage of winning points from the second serve primarily hovers around the 50% mark, while the rate of winning points from the first serve for all heights ranges from 65% to 82%. We could also observe an extreme outlier on this graph. Players that are 186cm in height have a considerably lower winning percentage of second serves than other players. Our correlation coefficient calculation shows a moderate relationship between the height and percentage of second serve points won (r = 0.5545005).    
+
+
+---
+
+##### **Confidence Interval and Hypothesis Testing: Finding the Mean Winner's Height**
+
+We observed that height does influence ATP Tour tennis matches, whereby taller players have an advantage over the shorter players, but only up to a certain point. For this part of the report, we would like to find the mean winner's height for a professional men's tennis player competing at the highest level of the competition. Firstly, we will conduct a 95% confidence interval to estimate the range of the mean winner's height.
+
+
+**A1. Statistical Model**
+
+- Let $\mu_h$ be the mean height in cm for the population of winners.
+- Our data is the 11455 match winners, $x_1, \ldots, x_n$ for $n = 11455$ (due to missing data, n is less than the the total observation).
+- Our model:
+
+$$
+X_i \sim F_h(\mu_h, \sigma_h) \quad \text{for $i = 1, \ldots, n$}
+$$
+
+
+**A2. Data Summary**
+
+```{r, echo=FALSE}
+sum_winners_height = atp_tour %>%
+  drop_na(winner_ht) %>% 
+  summarize(n = n(),
+            x_bar = mean(winner_ht),
+            sd = sd(winner_ht),
+            se = sd / sqrt(n))
+
+sum_winners_height %>%
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+- Our sample mean is $\mu_h = `r round(sum_winners_height$x_bar, 3)`$ cm
+- Our sample standard deviation of the winners' heights is $\sigma_h = `r round(sum_winners_height %>% pull(sd), 3)`$
+- Our estimate standard error is $\text{SE}(\bar{x}) = `r round(sum_winners_height %>% pull(se), 3)`$
+
+
+**A3. Calculating the 95% Confidence Interval**
+
+```{r, include = FALSE}
+ci_winners_height = sum_winners_height$x_bar + c(-1,1) * qt(0.975, sum_winners_height$n-1) * sum_winners_height$se
+
+ci_winners_height
+
+t.test(atp_tour$winner_ht)
+```
+
+- Lower bound: 187.5530cm
+- Upper bound: 187.8168cm
+
+
+**A4. Interpreting the 95% Confidence Interval for Mean Winner's Height**
+
+- We are 95% confident that the mean height for ATP Tour match winners fall in the range between 187.5530cm and 187.8168cm.
+
+We now know an estimate of where the mean height of the tennis match winners lies. We would like to take it a step further and conduct a hypothesis test on the results. 
+
+
+**B1. Statistical Model**
+
+The model we will be using is similar to the one we used previously for the 95% confidence interval in that:
+
+  - $F_h$ is the unspecified distribution
+  - $\mu_h$ is the mean height in cm for the population of winners 
+  - $\sigma_h$ is the standard deviation
+  
+$$
+X_i \sim F_h(\mu_h, \sigma_h) \quad \text{for $i = 1, \ldots, n$}
+$$  
+
+
+**B2. Hypotheses**
+
+We make the assumption that $\mu_h = 187$. Therefore,  
+
+$H_0: \mu_h = 187$    
+$H_a: \mu_h \neq 187$
+
+
+**B3. Test Statistic**
+
+$$
+T = \frac{\bar{X} - \mu_h}{s_h / \sqrt{n}}
+$$
+
+```{r, include=FALSE}
+mu_h = 187
+
+sum_winners_height_hypothesis = sum_winners_height %>% 
+  mutate(tstat = (x_bar - mu_h)/(sd/sqrt(n)))
+
+tstat_height = sum_winners_height_hypothesis %>% 
+  pull(tstat)
+
+
+tstat_height
+t.test(atp_tour$winner_ht, mu = 187, alternative = "two.sided")
+
+```
+
+- Observed test statistic: $T_{obs} = `r round(tstat_height,2)`$
+
+
+**B4. p-value Calculation**
+
+```{r, echo=FALSE}
+sum_winners_height_hypothesis = sum_winners_height_hypothesis %>% 
+  mutate(pvalue =  2*pt(-abs(tstat), n-1))
+
+pvalue_height = sum_winners_height_hypothesis %>% pull(pvalue)
+
+sum_winners_height_hypothesis %>% 
+  kbl(digits = 30) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+- Observed p-value: $p_{obs} = 3.11e-24$
+
+
+**B5. Interpretation**
+
+- There is overwhelming evidence that on average, the ATP Tour match winners are taller than 187 cm (p = 3.11e-24, two-sided t-test, df = 11454).
+
+- This is consistent with our 95% confidence interval where we find that the mean height of winners falls between the range of [187.5530, 187.8168].
+
+
+> **Is there a certain age where tennis players peak or do they continue to get better?**
+
+The third biological factor we aim to analyze is age. Essentially, we would like to know at what age do most players win matches and whether player performance declines as they grow older into their 40s. We will graph two scatter plots: 1. age versus games won in Grand Slams only to see if age plays a big factor in the grandest tennis tournaments 2. age versus games won in all tournaments to see any consistencies with the Grand Slams graph. Then, we would like to conduct a 95% confidence interval and hypothesis testing to find the mean winner's age.
+
+
+##### **Analysis: Age versus Games Won**
+
+**1. Grand Slams Only**
+
+We will group the ages together into specific intervals (arbitrary) to make our analysis easier. Although there are players aged 42 and above who played in the Grand Slam tournaments, we have decided to filter them out as we do not have adequate data to plot them accurately. 
+
+```{r, echo = FALSE, fig.height = 7}
+winners_age_grandslam = atp_tour %>% 
+  mutate(temp = floor(winner_age),
+         age_range = case_when((temp >= 14 & temp <= 20) ~ "14-20",
+                               (temp >= 21 & temp <= 27) ~ "21-27",
+                               (temp >= 28 & temp <= 34) ~ "28-34",
+                               (temp >= 35 & temp <= 41) ~ "35-41",
+                               (temp >= 42 & temp <= 48) ~ "42-48")) %>% 
+  select(-temp) %>% 
+  drop_na(age_range) %>%
+  filter(tourney_level == "G") %>% 
+  group_by(age_range) %>%
+  summarize(wins = n())
+
+
+losers_age_grandslam = atp_tour %>% 
+  mutate(temp = floor(loser_age),
+         age_range = case_when((temp >= 14 & temp <= 20) ~ "14-20",
+                               (temp >= 21 & temp <= 27) ~ "21-27",
+                               (temp >= 28 & temp <= 34) ~ "28-34",
+                               (temp >= 35 & temp <= 41) ~ "35-41",
+                               (temp >= 42 & temp <= 48) ~ "42-48")) %>% 
+  select(-temp) %>% 
+  drop_na(age_range) %>%
+  filter(tourney_level == "G") %>% 
+  group_by(age_range) %>%
+  summarize(losses = n())
+
+age_grandslam = winners_age_grandslam %>% 
+  full_join(losers_age_grandslam, by = c("age_range")) %>% 
+  mutate(percentage_wins = wins / (wins + losses) * 100) %>% 
+  drop_na()
+
+
+ggplot(age_grandslam, aes(x = age_range, y = percentage_wins, group = 1)) +
+  geom_smooth(se = FALSE, size= 1, color="midnightblue") +
+  geom_point() +
+  theme_bw() +
+  xlab("Age Range (years)") +
+  ylab("Percentage of Wins (%)") +
+  ggtitle("Age vs. Winning Percentage (Grand Slams Only)")
+
+```
+
+As we look at the graph, we could see that as age increases, players generally have higher winning percentage in the Grand Slams until they peak at age 28-34 (53% of their matches result in wins). As they grow older past 35 years old, there appears to be a decline in Grand Slam performance. We would like to see if this is the same case for all tournaments. 
+
+
+**2. All Tournaments**
+
+The same method is used to graph the plot, except this time, we will include all tournaments and not filter players aged 42 and above.
+
+```{r, echo = FALSE, fig.height = 7}
+winners_age_general = atp_tour %>% 
+  mutate(temp = floor(winner_age),
+         age_range = case_when((temp >= 14 & temp <= 20) ~ "14-20",
+                               (temp >= 21 & temp <= 27) ~ "21-27",
+                               (temp >= 28 & temp <= 34) ~ "28-34",
+                               (temp >= 35 & temp <= 41) ~ "35-41",
+                               (temp >= 42 & temp <= 48) ~ "42-48")) %>% 
+  select(-temp) %>% 
+  drop_na(age_range) %>%
+  group_by(age_range) %>%
+  summarize(wins = n())
+
+
+losers_age_general = atp_tour %>% 
+  mutate(temp = floor(loser_age),
+         age_range = case_when((temp >= 14 & temp <= 20) ~ "14-20",
+                               (temp >= 21 & temp <= 27) ~ "21-27",
+                               (temp >= 28 & temp <= 34) ~ "28-34",
+                               (temp >= 35 & temp <= 41) ~ "35-41",
+                               (temp >= 42 & temp <= 48) ~ "42-48")) %>% 
+  select(-temp) %>% 
+  drop_na(age_range) %>%
+  group_by(age_range) %>%
+  summarize(losses = n())
+
+age_general = winners_age_general %>% 
+  full_join(losers_age_general, by = c("age_range")) %>% 
+  mutate(percentage_wins = wins / (wins + losses) * 100) %>% 
+  drop_na()
+
+
+ggplot(age_general, aes(x = age_range, y = percentage_wins, group = 1)) +
+  geom_smooth(se = FALSE, size= 1, color="goldenrod1") +
+  geom_point() +
+  theme_bw() +
+  xlab("Age Range (years)") +
+  ylab("Percentage of Wins (%)") +
+  ggtitle("Age vs. Winning Percentage (All Tournaments)")
+
+```
+
+The scatter plot exhibits the same pattern as our previous graph where players peak at age 28-34 and then their performance decline as they grow older. There seems to be a huge decreases in percentage of wins when a player is 42 years old and older. 
+
+
+---
+
+##### **Confidence Interval and Hypothesis Testing: Finding the Mean Winner's Age**
+
+For this part of the report, we would like to find the mean winner's age for a professional men's tennis player competing at the highest level of the competition. Firstly, we will conduct a 95% confidence interval to estimate the range of the mean winner's age.
+
+
+**A1. Statistical Model**
+
+- Let $\mu_a$ be the mean age in years for the population of winners.
+- Our data is the 12384 match winners, $x_1, \ldots, x_n$ for $n = 12384$ (due to 1 missing observation).
+- Our model:
+
+$$
+X_i \sim F_a(\mu_a, \sigma_a) \quad \text{for $i = 1, \ldots, n$}
+$$
+
+
+**A2. Data Summary**
+
+```{r, echo=FALSE}
+sum_winners_age = atp_tour %>%
+  drop_na(winner_age) %>% 
+  summarize(n = n(),
+            x_bar = mean(winner_age),
+            sd = sd(winner_age),
+            se = sd / sqrt(n))
+
+sum_winners_age %>% 
+  kbl() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+```
+
+- Our sample mean is $\mu_h = `r round(sum_winners_age$x_bar, 3)`$ cm
+- Our sample standard deviation of the winners' heights is $\sigma_h = `r round(sum_winners_age %>% pull(sd), 3)`$
+- Our estimate standard error is $\text{SE}(\bar{x}) = `r round(sum_winners_age %>% pull(se), 3)`$
+
+
+**A3. Calculating the 95% Confidence Interval**
+
+```{r, include = FALSE}
+ci_winners_age = sum_winners_age$x_bar + c(-1,1) * qt(0.975, sum_winners_age$n-1) * sum_winners_age$se
+
+ci_winners_age
+
+t.test(atp_tour$winner_age)
+```
+
+- Lower bound: 27.43342 years
+- Upper bound: 27.59851 years
+
+
+**A4. Interpreting the 95% Confidence Interval for Mean Winner's Age**
+
+- We are 95% confident that the mean age for ATP Tour match winners fall in the range between 27.43342 years and 27.59851 years.
+
+We now know an estimate of where the mean age of the tennis match winners lies. We would like to take it a step further and conduct a hypothesis test on the results. 
+
+
+**B1. Statistical Model**
+
+The model we will be using is similar to the one we used previously for the 95% confidence interval in that:
+
+  - $F_a$ is the unspecified distribution
+  - $\mu_a$ is the mean age in years for the population of winners 
+  - $\sigma_a$ is the standard deviation
+  
+$$
+X_i \sim F_a(\mu_a, \sigma_a) \quad \text{for $i = 1, \ldots, n$}
+$$  
+
+
+**B2. Hypotheses**
+
+We make the assumption that $\mu_a = 27$. Therefore,  
+
+$H_0: \mu_a = 27$    
+$H_a: \mu_a \neq 27$
+
+
+**B3. Test Statistic**
+
+$$
+T = \frac{\bar{X} - \mu_a}{s_a / \sqrt{n}}
+$$
+
+```{r, include=FALSE}
+mu_a = 27
+
+sum_winners_age_hypothesis = sum_winners_age %>% 
+  mutate(tstat = (x_bar - mu_a)/(sd/sqrt(n)))
+
+tstat_age = sum_winners_age_hypothesis %>% 
+  pull(tstat)
+
+
+tstat_age
+t.test(atp_tour$winner_age, mu = 27, alternative = "two.sided")
+
+```
+
+- Observed test statistic: $T_{obs} = `r round(tstat_age,2)`$
+
+
+**B4. p-value Calculation**
+
+```{r, echo=FALSE}
+sum_winners_age_hypothesis = sum_winners_age_hypothesis %>% 
+  mutate(pvalue =  2*pt(-abs(tstat), n-1))
+
+pvalue_age = sum_winners_age_hypothesis %>% pull(pvalue)
+
+sum_winners_age_hypothesis %>% 
+  kbl(digits = 40) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+- Observed p-value: $p_{obs} = 2.59e-34$
+
+
+**B5. Interpretation**
+
+- There is overwhelming evidence that on average, the ATP Tour match winners are older than 27 years old (p = 2.59e-34, two-sided t-test, df = 12383).
+
+- This is consistent with our 95% confidence interval where we find that the mean age of winners falls between the range of [27.43342, 27.59851]. Since ages are really numbers that should not have any decimal numbers, we could say that the upper bound includes 28 years old, which agrees with the peak of our graphs.  
+
+
+> **Apart from the biological factors of a tennis player being a somewhat good predictor of ATP tennis match outcomes (specifically height and age), can we also look at the various in-game statistics to determine the winner and loser?**
+
+Now that we have analyzed the relationship between handedness/height/age and performance, we would like to turn our focus to exploring how we could use only match statistics to predict the outcome of a tennis match. We will look into two main elements: serve points won and break points.
+
+
+##### **Serve Points Won**
+
+We wish to understand how winners and losers differ in terms of first-serve points won and second-serve points won. Hence, we will create box plots to obtain the distribution of serve points won by the winners and losers in addition to plotting bar graphs to visualize the outcome of the tennis match when a player has a higher first serve percentage compared to his opponent.   
+
+
+**1. Distribution of Percentage of First Serve Points Won between Winners and Losers**
+
+We calculate the first-serve winning percentage separately by winners and losers before binding these two data frames together. Then, we create the box plot. 
+
+```{r, echo = FALSE, fig.height = 7, fig.width = 10}
+winners_fs_percentage_won = atp_tour %>%
+  summarise(outcome = "Winner", fs_percentage_won = w_1stWon / w_1stIn * 100) %>% 
+  drop_na()
+
+losers_fs_percentage_won = atp_tour %>%
+  summarise(outcome = "Loser", fs_percentage_won = l_1stWon / l_1stIn * 100) %>% 
+  drop_na()
+
+total_fs_percentage_won = rbind(winners_fs_percentage_won, losers_fs_percentage_won)
+
+
+ggplot(total_fs_percentage_won, aes(x = outcome, y = fs_percentage_won, color = outcome)) +
+  geom_boxplot() +
+  theme(legend.position="none") +
+  xlab("Player") +
+  ylab("Percentage of First Serve Points Won (%)") +
+  ggtitle("Distribution of Percentage of First Serve Points Won between Winners and Losers")
+
+```
+
+The box plot shows that the median for the percentage of first serve points won for match winners is higher by approximately 10 percent than those of match losers. On average, winners have higher percentage of first serve points won. We can also observe that while the winner box plot has several outliers on the lower tail, they are not as extreme as the outliers found on the lower tail of the loser box plot. 
+
+
+**2. Comparing First Serve Percentage in Match Wins**
+
+Since we are focusing on the player with higher first serve percentage and the outcome of the match, we will be filtering out all the equivalent percentage of first serve points won. Then, we will create a new column to compare which player (the winner or the loser) has the higher percentage of first serve points in a match. 
+
+```{r, echo = FALSE, fig.height = 7}
+num_fs_percentage_won = atp_tour %>%
+  summarise(winner_fs_percentage_won = w_1stWon / w_1stIn * 100, loser_fs_percentage_won = l_1stWon / l_1stIn * 100) %>%
+  drop_na() %>%
+  filter(!(winner_fs_percentage_won == loser_fs_percentage_won)) %>% 
+  mutate(high_fsperc_won = case_when(
+    winner_fs_percentage_won > loser_fs_percentage_won ~ "Winner",
+    winner_fs_percentage_won < loser_fs_percentage_won ~ "Loser"))
+  
+
+
+ggplot(num_fs_percentage_won, aes(x = high_fsperc_won, fill = high_fsperc_won)) + 
+  geom_bar() + 
+  ggtitle("Comparing Who Has the Higher First Serve Percentage in Match Wins") + 
+  ylab("Count") + 
+  xlab("Player") +
+  theme_bw() +
+  theme(legend.position="none")  
+
+```
+
+The bar graph shows that a player is more than 4 times as likely to win a match when they have a higher first serve percentage. Of the matches played, over 10000 were won by players with a higher first serve percentage points won. We would like to analyze whether this result is the same in the case of second-serve points won. 
+
+
+**3. Distribution of Percentage of Second Serve Points Won between Winners and Losers**
+
+Here, We use the same method as the one in our previous box plot graph.
+
+```{r, echo = FALSE, fig.height = 7, fig.width = 10}
+winners_ss_percentage_won = atp_tour %>%
+  summarise(outcome = "Winner", ss_percentage_won = w_2ndWon / (w_svpt - w_1stIn) * 100) %>% 
+  drop_na()
+
+losers_ss_percentage_won = atp_tour %>%
+  summarise(outcome = "Loser", ss_percentage_won = l_2ndWon / (l_svpt - l_1stIn) * 100) %>% 
+  drop_na()
+
+total_ss_percentage_won = rbind(winners_ss_percentage_won, losers_ss_percentage_won)
+
+
+ggplot(total_ss_percentage_won, aes(x = outcome, y = ss_percentage_won, color = outcome)) +
+  geom_boxplot() +
+  theme(legend.position="none") +
+  xlab("Player") +
+  ylab("Percentage of Second Serve Points Won (%)") +
+  ggtitle("Distribution of Percentage of Second Serve Points Won between Winners and Losers")
+
+```
+
+The box plot shows that the median for the second serve percentage points won for match winners is higher by approximately 10 percent (similar to the previous box plot observation) than those of match losers. On average, winners have higher second serve percentage points won. However, there is much more variability for the winners. Also, we could see that the percentage of second serve points won is noticeably lower on both box plots - especially the winner box plot - compared to the percentage of first serve points won.
+
+
+**4. Comparing Second Serve Percentage in Matches**
+
+We will use the same method as in analysis 2. 
+
+```{r, echo = FALSE, fig.height = 7}
+num_ss_percentage_won = atp_tour %>%
+  summarise(winner_ss_percentage_won = w_2ndWon / (w_svpt - w_1stIn) * 100, loser_ss_percentage_won = l_2ndWon / (l_svpt - l_1stIn) * 100) %>%
+  drop_na() %>%
+  filter(!(winner_ss_percentage_won == loser_ss_percentage_won)) %>% 
+  mutate(high_ssperc_won = case_when(
+    winner_ss_percentage_won > loser_ss_percentage_won ~ "Winner",
+    winner_ss_percentage_won < loser_ss_percentage_won ~ "Loser"))
+  
+
+
+ggplot(num_ss_percentage_won, aes(x = high_ssperc_won, fill = high_ssperc_won)) + 
+  geom_bar() + 
+  ggtitle("Comparing Who Has the Higher Second Serve Percentage in Matches") + 
+  ylab("Count") + 
+  xlab("Player") +
+  theme_bw() +
+  theme(legend.position="none") 
+
+```
+
+The bar graph shows that a player is more than 3.5 times as likely to win a match when they have a higher second serve percentage. Of the matches played, over 9000 were won by players with a higher second serve percentage points won.
+
+
+---
+
+##### **Break Points**
+
+Next, We want to analyze how winners and losers differ in terms of break points faced and break points saved. A break point occurs when two conditions are met: 1) one player is one point away from a win, and 2) their opponent is serving. ^[Prahl, A. (2021). Not sure what a break point means in tennis? Here's a quick explainer. POPSUGAR. Retrieved from: https://www.popsugar.com/fitness/What-Break-Point-Tennis-46404970] For these analyses, we will also create box plots to obtain the distribution of break points faced/saved by the winners and losers in addition to plotting bar graphs to visualize the outcome of the tennis match when a player has a higher percentage of break points saved compared to his opponent.
+
+
+**1. Distribution of Break Points Faced between Winners and Losers**
+
+Break points faced is when the player is serving while being one point away from losing the game. We combine the break points faced by winners and losers together and create a box plot. 
+
+```{r, echo = FALSE, fig.height = 7}
+break_faced_winner = atp_tour %>%
+  summarise(outcome = "Winner", bp_faced = w_bpFaced) %>% 
+  drop_na()
+
+break_faced_loser = atp_tour %>%
+  summarise(outcome = "Loser", bp_faced = l_bpFaced) %>% 
+  drop_na()
+
+break_faced = rbind(break_faced_winner, break_faced_loser)
+
+
+ggplot(break_faced, aes(x = outcome, y = bp_faced, color = outcome)) +
+  geom_boxplot() +
+  theme(legend.position="none") +
+  xlab("Player") +
+  ylab("Break Points Faced") +
+  ggtitle("Distribution of Break Points Faced between Winners and Losers")
+```
+
+The box plot shows that the median number of break points faced by match winners is relatively lower (approximately 4) than those of match losers (approximately 8). We could also see that there are losers who faced more than 30 break points. On average, winners have lower break points faced.   
+
+It would be more interesting to find how winners and losers fare in saving those break points. 
+
+
+**2. Distribution of Percentage of Break Points Saved between Winners and Losers**
+
+Break points saved is when the player (also the server) is one point away from losing a game, but is able to make a comeback to prevent the receiver from converting the point. We replicate the previous box plot but we change the break points faced variable with the percentage of break points saved.
+
+```{r, echo = FALSE, fig.height = 7}
+break_saved_winner = atp_tour %>%
+  summarise(outcome = "Winner", pct_bp_saved = w_bpSaved/w_bpFaced * 100) %>% 
+  drop_na()
+
+break_saved_loser = atp_tour %>%
+  summarise(outcome = "Loser", pct_bp_saved = l_bpSaved/l_bpFaced * 100) %>% 
+  drop_na()
+
+break_saved = rbind(break_saved_winner, break_saved_loser)
+
+
+ggplot(break_saved, aes(x = outcome, y = pct_bp_saved, color = outcome)) +
+  geom_boxplot() +
+  theme(legend.position="none") +
+  xlab("Player") +
+  ylab("Percentage of Break Points Saved") +
+  ggtitle("Distribution of Percentage of Break Points Saved between Winners and Losers")
+```
+
+The box plot shows that the median percentage of break points saved for match winners is higher by roughly 10% than those of match losers. On average, winners have a higher break points saved percentage. However, we could see that for both both box plots, the whiskers cover all (or almost all) percentage of break points saved. The main difference between the two is simply the interquartile range (3rd quartile - 1st quartile) and the median value. 
+
+
+**3. Comparing Percentage of Break Points Saved in Matches**
+
+Firstly, we compute break point saved percentage of the respective winners and losers. We filter out equivalent break point saved percentages and then we compare which player has the higher break point saved percentage in a given match.
+
+```{r, echo = FALSE, fig.height = 7}
+num_bp_saved = atp_tour %>%
+  summarise(winner_bp_saved_percentage = w_bpSaved / w_bpFaced * 100, loser_bp_saved_percentage = l_bpSaved / l_bpFaced * 100) %>%
+  drop_na() %>% 
+  filter(!(winner_bp_saved_percentage == loser_bp_saved_percentage)) %>% 
+  summarise(high_bpperc_won = case_when(
+    winner_bp_saved_percentage > loser_bp_saved_percentage ~ "Winner",
+    winner_bp_saved_percentage < loser_bp_saved_percentage ~ "Loser")) 
+
+
+ggplot(num_bp_saved, aes(x = high_bpperc_won, fill = high_bpperc_won)) + 
+  geom_bar() + 
+  ggtitle("Comparing Percentage of Break Points Saved in Matches") + 
+  ylab("Count") + 
+  xlab("Player") +
+  theme_bw() +
+  theme(legend.position="none") 
+
+```
+
+The bar graph shows that a player is around 3 times as likely to win a match when they have a higher break points saved percentage. Of the matches played, over 7000 were won by players with a higher break point saved percentage.
+
+
+## Discussion 
+
+##### **Handedness in ATP Tour Tennis Matches**
+
+The graphs we have plotted show that right-handed players are more dominant than left-handed players on different court surfaces. Even on clay courts where left-handed players tend to be more victorious, the win rate of right-handed players for all five years (2017-2021) is relatively close to the left-handed players. 
+
+However, through our hypothesis tests, we can conclude that handedness is not a good indicator of performance on different court surfaces. While right-handed tennis players are likely to win on hard surfaces compared to left-handed players, players of either hands have equal chances of winning on clay and grass surfaces. 
+
+Given that tennis is a sport wherein players will have to react on either side of their body, there will typically be use of both forehands and backhands, and since that is the case, having one hand be dominant than the other is not all that advantageous. 
+
+
+---
+
+##### **Height in ATP Tour Tennis Matches** 
+
+We can conclude that height matters, but there is an upper limit to how big of an advantage it is. Having a stature between the range of 187 cm to 197 cm is ideal, but being taller than that is a disadvantage. From a bio-mechanical perspective, longer body segments allow for greater reach, ^[Sanchez-Pay, A., Ortega-Soto, J. A., Sanchez-Alcaraz, B. J. (2019). The influence of player height on service
+performance in professional tennis. ITF Coaching & Sport Science Review, 27(79), 7–10.] hence tall players could return the ball more effectively in the event of a rally and, as a result, come out on top. However, the trade off is that taller players tend to be little slower moving around the court, and have a harder time dealing with low shots. This explains why there is a very sharp decline in winning percentage for > 200 cm players playing on grass surfaces because the tennis balls are very low and fast on grass.
+
+On top of that, our analyses on ace hit rate, percentage of first serve wins, and percentage of second serve wins convey the fact that taller players are better servers than the shorter players. Taller players can smash the tennis balls harder and have the ability to hit them at sharper angles, ^[Sizing up the height advantage on serve (2020). Stats On The T. Retrieved from: http://on-the-t.com/2020/10/25/sizing-up-height-advantage/] hence why these athletes have higher number of aces, first serve wins, and second serve wins. However, it seems that the second serves of taller players do not produce an outcome that are as decisive as their first serves. Opponents are able to return their second serves more successfully.
+
+Our 95% confidence interval and hypothesis test agree with each other, whereby the mean winner's height is around 187.5 cm to 187.8 cm. While this does not imply the ideal height for a tennis player, it does provide further evidence that tall players - but not too tall - have the biggest advantage in the sport.   
+
+
+---
+
+##### **Age in ATP Tour Tennis Matches**
+
+Our analysis of age and percentage of wins shows that age is similar to height, whereby it does matter but only up to a certain point. Generally, we can see that as players age, there is a slight increase in winning percentages, peaking between the ages of 28 and 34. This trend is perhaps due to experience. As players grow older, he knows better what works for them in preparing for a tournament. ^[Wennakoski, M. (2017, March 2). Why age and experience are hard to beat on the tennis court. Long Island Tennis Magazine. Retrieved from: https://longislandtennismagazine.com/article9091/why-age-and-experience-are-hard-beat-tennis-court] However, once players become older than this age range, we can see a dip in their performance. The decline gets gradually drastic when the player is 42 years old and older. A possible explanation for this is the physical conditions of the more senior players, whereby they might be out-of-shape compared to when they were younger. Moreover, as people age, they are more vulnerable to complications such as injuries, which is a factor that must be considered while analyzing this data. There is not much analysis we can do to answer the question of what other factors may play a role, but rather predict why there seems to be a dip in the percentage of wins.     
+
+While it is true match performance gets better as the tennis player grows older but not too old, when we look at our graphs and analyses, we can see that the age variable has little impact on the percentage of wins compared to other variables. Excluding the age range of 42-48, the increase and decrease in the percentage of wins are slight. Evidently, we can still see seasoned players like Novak Djokovic and Rafael Nadal, both in their middle 30s, still dominating ATP tournaments.    
+
+
+---
+
+##### **Match Statistics and What Do They Tell Us About the Ability of Winners/Losers**
+
+From the various match statistics we have analyzed, we can conclude that they could be a good predictor of the outcome of the game. Winners have a higher percentage of first-serve points won and second-serve points won compared to the losers of the match. However, the percentage of second-serve points won is not as high as that of first-serve points won. This can be explained by the fact that the first serve is a lot more aggressive and riskier since the opponent's return will be easier to hit, which typically leads to winning the point. The second serve is more controlled and less aggressive because of the fear of losing a point freely, which causes the server to lose his advantage over his opponent, making it harder to win a point. ^[Kokta, M. (2020, April 17). Predicting ATP tennis match outcomes using serving statistics. Medium. Retrieved from: https://medium.com/swlh/predicting-atp-tennis-match-outcomes-using-serving-statistics-cde03d99f410#:~:text=The%20first%20serve%20percentage%20takes,effectiveness%20of%20the%20first%20serve.]
+
+In addition, winners tend to face a smaller number of break points. This relates back to the winners having a higher percentage of first-serve points and second-serve points won, which allows them to win their serve game with fewer difficulties. Winners typically also have a higher percentage of saving break points than losers.
+
+
+---
+
+##### **Limitations**
+
+There are several shortcomings to our analyses. Firstly, we do not have data on one of the biggest external factors in tennis matches: wind speed. This could perhaps affect the outcome of tennis matches, where one player could use the wind to their advantage to hit cross-court shots at a sharper angle, putting his opponent in a difficult situation to return the shot.  
+
+Secondly, according to the variables we analyzed, the 2020 ATP Tour tennis matches data do not provide an exact winning percentage. As previously mentioned, the ATP canceled a great deal of the 2020 tournaments due to the COVID-19 pandemic. This has affected the results we see in several of the graphs we plotted, especially the two scatter plots on the winning percentage by left-handed/right-handed players on different court surfaces.   
+
+
+---
+
+##### **Future Directions**
+
+We hope that data on serve/hit speeds and return statistics will become available in the future. We think these variables would be instrumental in expanding our analyses of how handedness and height affect player performance. We would also like to collect data on the average wind speed and direction during a particular match. With this data, we could refine our understanding of how external factors affect a player's serve. These are some of the additional questions that we could potentially explore with the addition of the elements mentioned earlier:
+
+  1) Is there a difference in serve/hit speed between left-handed and right-handed tennis players?
+  2) Does height affect a player's ability to return shots?
+  3) Do taller tennis players serve at a higher speed than the shorter tennis players?
+  4) How does wind speed and direction affect a player's serve?
+
+For the first question, we could create a density graph to see whether the distribution of serve/hit speed between the left-handed and right-handed tennis players is somewhat similar or whether there is a distinct difference. For the second and third questions, we could graph a scatter plot and plot a linear regression line to measure the strength of the relationship between height and returns/serve speed. Additionally, to evaluate the correlation between wind and a player's serve, we believe that the same method could be used.
+
+Regarding the different methods to address our current questions of interest, we could also plot a density/histogram graph to show the percentage distribution of first/second serve points won between winners and losers. This could reveal whether the percentage of first/second serve points won are normally distributed and similar for both winners and losers or different between the two.   
+
+
+--- 
+
+##### **Conclusion**
+
+To sum up, we found that height and age affect the outcome of the tennis match to a certain extent. Height influences service performance - such as ace hit rate, first-serve points, second-serve points win - and overall winning percentage. We also observed that tennis players tend to peak around 28-34 years old. On the other hand, we deduce that the handedness of tennis players has little impact on their performance on different court surfaces. While the right-handed players are more likely to win on hard surfaces, we discovered that players actually have similar chances of winning on other court surfaces (clay and grass) regardless of their handedness. 
+
+From a slightly different perspective, we also observed that match statistics could predict the outcome of tennis matches. Players with a higher percentage of first-serve points, second-serve points, break points saved, and lesser break points faced tend to be the winner, whereas players with a lower percentage of first-serve points, second-serve points, break points saved, and higher break points faced are likely the loser.  
+
+We have truly garnered a great deal of new knowledge from our analyses. Going forward, we hope tennis enthusiasts could use our report to learn more about how each factor correlates to players' winning percentage. 
+

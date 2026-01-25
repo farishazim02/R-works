@@ -1,0 +1,1148 @@
+---
+title: "Accident Severity in USA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Makes sure that the required packages are properly installed; if they are not installed, R helps to install them
+# Retrieved on 04/19/25 from - https://stackoverflow.com/questions/4090169/elegant-way-to-check-for-missing-packages-and-install-them
+required_packages <- c("tidyverse", "glmnet", "patchwork", "caret", "scales", "gifski", "gganimate", "tidymodels", "MASS", "car",
+                       "pROC", "doParallel")
+new_packages <- required_packages[!(required_packages %in% installed.packages()[, "Package"])]
+if (length(new.packages)) {
+  install.packages(new_packages)
+}
+
+
+library(tidyverse)
+library(patchwork)
+library(glmnet)
+library(caret)
+library(scales)
+library(gganimate)
+library(gifski)
+library(tidymodels)
+library(MASS)
+library(car)
+library(pROC)
+library(doParallel)
+
+
+my_theme <- theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12, color = "black"),
+    axis.title = element_text(size = 14, color = "black", face = "plain"),
+    title = element_text(size = 14, color = "black", face = "bold"),
+    legend.text = element_text(size = 12, color = "black"),
+    legend.title = element_text(
+      color = "black",
+      size = 12, margin =
+        ggplot2::margin(t = 0, r = 20, b = 0, l = 0, unit = "pt")
+    ),
+    strip.text = element_text(size = 14, color = "black"),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    legend.position = "bottom",
+    panel.spacing = unit(15, "pt"),
+    axis.line = element_line(colour = "black"),
+    panel.grid = element_line(color = "#f3f6f4")
+  )
+
+theme_set(my_theme)
+
+options(warn = -1)
+```
+
+
+```{r}
+# Read data - Accidents from 2018 -> 2022
+
+accidents <- read_csv("US_Accidents.csv")
+
+# Check NA values
+sapply(accidents, function(y) sum(length(which(is.na(y)))))
+
+```
+
+
+## Part 1: Understanding the Dataset
+
+
+#### A: Temporal Trend
+
+```{r, fig.height = 6, fig.width = 10}
+quarter_arrangement <- c("Q1 2018", "Q2 2018", "Q3 2018", "Q4 2018",
+                         "Q1 2019", "Q2 2019", "Q3 2019", "Q4 2019",
+                         "Q1 2020", "Q2 2020", "Q3 2020", "Q4 2020",
+                         "Q1 2021", "Q2 2021", "Q3 2021", "Q4 2021",
+                         "Q1 2022", "Q2 2022", "Q3 2022", "Q4 2022")
+
+time_trend1 <- accidents %>% 
+  count(quarter_date) %>% 
+  mutate(quarter_date = factor(quarter_date, levels = quarter_arrangement)) %>% 
+  arrange(quarter_date) %>% 
+  mutate(is_q4 = grepl("Q4", quarter_date))
+
+time_trend1 %>% 
+  ggplot(aes(x = quarter_date, y = n)) +
+  geom_line(group = 1, color = "#C5050C") +
+  geom_point() +
+  geom_point(data = filter(time_trend1, is_q4),
+             aes(x = quarter_date, y = n, color = "Quarter 4"),
+             shape = 21, size = 5, stroke = 1.5) +
+  labs(x = "", y = "Number of Accidents", title = "Quarterly Trend of Accidents (Fatal/Non-fatal), 2018 - 2022",
+       color = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_line(color = "black", size = 0.5),
+        legend.position = c(0.1, 0.9)) +
+  scale_y_continuous(labels = label_number(scale = 1e-3, suffix = "K")) +
+  scale_x_discrete(breaks = quarter_arrangement[seq(1, length(quarter_arrangement), by = 2)]) +
+  scale_color_manual(values = c("Quarter 4" = "darkblue")) +
+  annotate("segment", x = 12.25, y = 180000, xend = 11.25, yend = 160000,
+         arrow = arrow(type = "closed", length = unit(0.02, "npc"))) +
+  annotate("segment", x = 10.6, y = 460000, xend = 11.6, yend = 480000,
+         arrow = arrow(type = "closed", length = unit(0.02, "npc"))) +
+  annotate("text", x = 15, y = 190000, label = "Increased caution/tightened restrictions\ndo to rising COVID numbers") +
+  annotate("text", x = 10, y = 435000, label = "Election + holiday +\npandemic fatigue")
+
+ggsave("quarterly_trend.svg")
+  
+```
+
+
+#### B: Geographic Trend
+
+```{r, fig.height = 6, fig.width = 10}
+us_states <- map_data("state")
+
+census_pop <- read_csv("Census_Population.csv") %>%
+  pivot_longer(
+    cols        = starts_with("pop_"),
+    names_to    = "year",
+    names_prefix= "pop_",
+    values_to   = "population"
+  ) %>%
+  mutate(year = as.integer(year))
+
+geog_accidents <- accidents %>% 
+  count(year_date, State) %>% 
+  left_join(census_pop, by = c("State" = "abbr", "year_date" = "year")) %>% 
+  mutate(accidents_per_100k = round((n / population) * 100000)) %>% 
+  mutate(bins = case_when(
+    accidents_per_100k <= 100 ~ "100 or less",
+    accidents_per_100k <= 200 ~ "101 - 200",
+    accidents_per_100k <= 300 ~ "201 - 300",
+    accidents_per_100k > 300 ~ "301 or more"
+  )) %>%
+  mutate(bins = forcats::fct(bins, levels = c(
+    "100 or less", "101 - 200",
+    "201 - 300", "301 or more"
+  ))) %>% 
+  mutate(state = tolower(state))
+
+base_map <- us_states %>%
+  ggplot(aes(x = long, y = lat, group = group)) +
+  geom_polygon(color = "black", fill = NA) +
+  theme(
+    axis.text = element_blank(),
+    axis.line.x = element_blank(),
+    axis.line.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank()
+  ) +
+  labs(x = "", y = "",
+       title = "Accident Rate per Capita")
+
+
+accidents_over_time <- us_states %>% 
+  dplyr::select(-subregion) %>% 
+  arrange(region) %>%  
+  inner_join(geog_accidents, by = c("region" = "state"))
+
+num_years <- max(accidents$year_date) - min(accidents$year_date) + 1
+
+
+label_df <- accidents_over_time %>%
+  group_by(State, year_date) %>%
+  summarize(
+    long = mean(range(long)),
+    lat  = mean(range(lat)),
+    .groups = "drop"
+  ) %>% 
+  mutate(lat =  ifelse(State == "ID", lat - 1, lat),
+         long = ifelse(State == "MI", long + 1.5, long),
+         lat =  ifelse(State == "MI", lat - 1.5, lat),
+         long = ifelse(State == "MN", long - 1, long),
+         lat =  ifelse(State == "MN", lat - 1, lat),
+         long = ifelse(State == "LA", long - 1, long),
+         long = ifelse(State == "FL", long + 2.5, long),
+         lat =  ifelse(State == "KY", lat - 0.5, lat),
+         long = ifelse(State == "NC", long + 0.5, long),
+         lat =  ifelse(State == "NC", lat + 0.5, lat),
+         long = ifelse(State == "VA", long + 1.5, long),
+         lat =  ifelse(State == "VA", lat - 0.5, lat),
+         long = ifelse(State == "MA", long - 0.5, long),
+         lat =  ifelse(State == "MA", lat + 0.5, lat),
+         long = ifelse(State == "VT", long - 0.25, long),
+         lat =  ifelse(State == "MD", lat + 0.5, lat))
+
+animation <- base_map +
+  geom_polygon(data = accidents_over_time, aes(
+    x = long, y = lat, group = group,
+    fill = bins
+  ), color = "black") +
+  geom_text(
+    data = label_df,
+    aes(x = long, y = lat, label = State),
+    size = 3.5,
+    color = "black",
+    inherit.aes = FALSE
+  ) + 
+  scale_fill_manual(values = rev(c("#EA4C46", "#F07470", "#F6BDC0", "#FFEBEA"))) +
+  labs(fill = "") +
+  transition_time(year_date) +
+  ggtitle("Accidents (Fatal/Non-fatal) per 100,000 People by State",
+    subtitle = "Year: {frame_time}"
+  )
+  
+
+animate(animation,
+        nframes = num_years, fps = 0.8, renderer = gifski_renderer("accidents_rate.gif"), height = 1080, width = 1920,
+        res = 175
+)
+
+```
+
+```{r, fig.height = 5, fig.width = 12}
+
+p <- list()
+
+city_accidents <- accidents %>% 
+  drop_na(City) %>% 
+  count(City) %>% 
+  arrange(desc(n))
+
+street_accidents <- accidents %>% 
+  drop_na(Street) %>% 
+  mutate(Street = str_remove(Street, " [NSWE]$")) %>% 
+  count(Street) %>% 
+  arrange(desc(n))
+
+
+p[[1]] <- city_accidents %>% 
+  head(10) %>% 
+  ggplot(aes(y = reorder(City, n), x = n)) +
+  geom_col(color = "black", fill = "orangered2", alpha = 0.8) +
+  scale_x_continuous(expand = c(0, 0), labels = label_number(scale = 1e-3, suffix = "K")) +
+  labs(y = "", x = "Number of Accidents", 
+       title = "Cities") +
+  theme(
+    panel.grid.major.y = element_blank()
+  )
+
+
+p[[2]] <- street_accidents %>% 
+  head(10) %>% 
+  ggplot(aes(y = reorder(Street, n), x = n)) +
+  geom_col(color = "black", fill = "deepskyblue4", alpha = 0.8) +
+  scale_x_continuous(expand = c(0, 0), labels = label_number(scale = 1e-3, suffix = "K")) +
+  labs(y = "", x = "Number of Accidents", 
+       title = "Roads") +
+  theme(
+    panel.grid.major.y = element_blank()
+  )
+  
+
+p[[1]] + p[[2]] +
+  plot_annotation(title = "Most Accident-prone Cities and Roads, 2018 - 2022")
+
+
+ggsave("accident_city_roads.svg")
+
+```
+
+
+## Part 2: Severity Analysis
+
+```{r, fig.height = 5, fig.width = 9}
+
+p2 <- list()
+
+p2[[1]] <- accidents %>% 
+  mutate(Severity = as.factor(Severity)) %>% 
+  count(Severity) %>%
+  mutate(total = sum(n),
+         proportion = round(n / total, 2)) %>% 
+  ggplot() +
+  geom_col(aes(x = Severity, y = n, fill = Severity), show.legend = F, color = "black") +
+  labs(x = "Severity", y = "Number of Accidents", fill = "",
+       title = "Distribution of Accidents by Severity, 2018 - 2022",
+       subtitle = "Severity: 1 = Least Severe, 4 = Most Severe") +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F07470", "#F6BDC0", "#FFEBEA"))) +
+  scale_y_continuous(labels = label_number(scale = 1e-6, suffix = "M"), expand = c(0, 0.01, 0.05, 0.1)) +
+  theme(panel.grid.major.x = element_blank(),
+        plot.subtitle = element_text(face = "plain")) +
+  geom_text(aes(x = Severity, y = (n + 2e5), label = paste0(proportion * 100, "%")),
+            size = 4)
+
+
+p2[[1]]
+
+ggsave("severity_distrib.svg")
+
+```
+
+
+```{r}
+# Sample 50,000 observations from each Severity class
+set.seed(2025)
+
+accidents_trunc <- accidents %>% 
+  drop_na() %>% 
+  mutate(Severity = factor(Severity)) %>% 
+  group_by(Severity) %>% 
+  slice_sample(n = 50000,
+               replace = F) %>% 
+  ungroup() %>% 
+  mutate(Severity = ifelse(Severity %in% c(1,2), "Minor", "Severe"),
+         Severity = factor(Severity, levels = c("Minor", "Severe")))
+```
+
+
+#### A: Figures to Note: Year and Distance
+
+```{r, fig.height = 5, fig.width = 9}
+p2[[2]] <- accidents_trunc %>% 
+  mutate(Severity = as.factor(Severity)) %>% 
+  group_by(year_date, Severity) %>% 
+  summarize(counts = n()) %>% 
+  group_by(year_date) %>% 
+  mutate(total = sum(counts)) %>% 
+  ungroup() %>% 
+  mutate(proportion = round((counts/total) * 100, 2)) %>% 
+  ggplot(aes(x = year_date, y = proportion, fill = Severity)) +
+  geom_col(position = "stack", color = "black") +
+  labs(x = "Year", y = "Proportion", 
+       title = "Proportion of Accident Severity by Year") +
+  scale_y_continuous(labels = label_number(suffix = "%"), expand = c(0, 0.01, 0.11, 0.1)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0"))) +
+  theme(plot.subtitle = element_text(face = "plain"),
+        panel.grid.major.x = element_blank())
+  
+p2[[2]]
+
+ggsave("year_distrib.svg")
+
+```
+
+
+```{r, fig.height = 5, fig.width = 9}
+accidents_trunc
+
+accidents_trunc %>% 
+  drop_na(`Distance(mi)`) %>% 
+  ggplot(aes(x = Severity, y = log(`Distance(mi)`), fill = Severity)) +
+  geom_boxplot(show.legend = F) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "log(Distance (mi))",
+       title = "Distribution of Impacted Road Length by Accident Severity") +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0")))
+
+ggsave("distance_distrib.svg")
+
+# Significant, but distance is a consequence of severity
+t.test(accidents_trunc %>% filter(Severity == "Severe") %>%  pull(`Distance(mi)`),
+       accidents_trunc %>% filter(Severity == "Minor") %>%  pull(`Distance(mi)`))
+
+
+```
+
+
+#### B: Relationship between Time (Period of the Day / Day of the Week / Month) and Accident Risk 
+
+```{r, fig.height = 5, fig.width = 12}
+# https://www.britannica.com/dictionary/eb/qa/parts-of-the-day-early-morning-late-morning-etc
+
+time_accident <- accidents_trunc %>% 
+  mutate(
+    period = hour(Start_Time)) %>% 
+  mutate(period = case_when(
+    period >= 5 & period <= 11 ~ "Morning",
+    period >= 12 & period <= 16 ~ "Afternoon",
+    period >= 17 & period <= 20 ~ "Evening",
+    period >= 21 | (period <= 4) ~ "Night"
+  )) %>% 
+  mutate(period = factor(period, 
+                         levels = c("Morning", "Afternoon", "Evening", "Night"))) %>% 
+  mutate(day_date = wday(Start_Time, abbr = T, label = T)) %>% 
+  mutate(day_date = factor(day_date, levels = c("Mon", "Tue", "Wed", "Thu", "Fri",
+                                                "Sat", "Sun"))) %>% 
+  mutate(month_date = str_extract(month_date, "^[A-Za-z]+")) %>% 
+  mutate(month_date = factor(month_date, 
+                         levels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))) %>% 
+  dplyr::select(period, day_date, month_date, Severity)
+
+period_graph <- time_accident %>% 
+  group_by(period, Severity) %>% 
+  summarize(counts = n()) %>% 
+  group_by(period) %>% 
+  mutate(total = sum(counts)) %>% 
+  ungroup() %>% 
+  mutate(proportion = round((counts/total), 2))
+
+
+# Period
+p2[[3]] <- ggplot(period_graph, aes(x = period, y = proportion, fill = Severity)) +
+  geom_col(position = position_dodge(width = 0.9), color = "black") +
+  labs(
+    title = "By Period of the Day",
+    x     = "",
+    y     = "Proportion",
+    fill  = "Severity\n"
+  ) +
+  scale_y_continuous(expand = c(0, 0, 0.1, 0), labels = scales::percent_format()) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0"))) +
+  theme(panel.grid.major.x = element_blank(),
+        plot.title = element_text(size = 14),
+        legend.position = "right")
+
+```
+
+
+```{r, fig.height = 5, fig.width = 9}
+
+day_graph <- time_accident %>% 
+  mutate(day_date = case_when(
+    day_date %in% c("Mon", "Tue", "Wed", "Thu", "Fri") ~ "Weekday",
+    day_date %in% c("Sat", "Sun") ~ "Weekend"
+  )) %>% 
+  group_by(day_date, Severity) %>% 
+  summarize(counts = n()) %>% 
+  group_by(day_date) %>% 
+  mutate(total = sum(counts)) %>% 
+  ungroup() %>% 
+  mutate(proportion = round((counts/total), 2)) %>% 
+  mutate(proportion = ifelse(day_date == "Weekend" & Severity == 2, proportion + 0.01, proportion))
+
+p2[[4]] <- day_graph %>% 
+ ggplot(aes(x = day_date, y = proportion, fill = Severity)) +
+  geom_col(position = position_dodge(width = 0.9), color = "black") +
+  labs(x = "", y = "", 
+       title = "By Parts of the Week",
+       fill  = "Severity\n") +
+  scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0.0, 0.01, 0.03)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0"))) +
+  theme(plot.subtitle = element_text(face = "plain"),
+        plot.title = element_text(size = 14),
+        panel.grid.major.x = element_blank(),
+        legend.position = "right")
+
+```
+
+
+```{r, fig.height = 5, fig.width = 12}
+
+season_graph <- time_accident %>% 
+  mutate(season = case_when(
+    month_date %in% c("Dec", "Jan", "Feb") ~ "Winter",
+    month_date %in% c("Mar", "Apr", "May") ~ "Spring",
+    month_date %in% c("Jun", "Jul", "Aug") ~ "Summer",
+    month_date %in% c("Sep", "Oct", "Nov") ~ "Fall"
+  )) %>% 
+  mutate(season = factor(season, levels = 
+                           c("Spring", "Summer", "Fall",
+                             "Winter"))) %>% 
+  group_by(season, Severity) %>% 
+  summarize(counts = n()) %>% 
+  group_by(season) %>% 
+  mutate(total = sum(counts)) %>% 
+  ungroup() %>% 
+  mutate(proportion = round((counts/total), 2)) %>% 
+  mutate(proportion = ifelse(season == "Fall" & Severity == 2, proportion + 0.01, proportion))
+
+
+p2[[5]] <- season_graph %>% 
+ ggplot(aes(x = season, y = proportion, fill = Severity)) +
+  geom_col(position = position_dodge(width = 0.9), color = "black") +
+  labs(x = "", y = "", 
+       title = "By Season",
+       fill  = "Severity\n") +
+  scale_y_continuous(labels = scales::percent_format(), expand = c(0, 0.0, 0.01, 0.03)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0"))) +
+  theme(plot.subtitle = element_text(face = "plain"),
+        plot.title = element_text(size = 14),
+        panel.grid.major.x = element_blank(),
+        legend.position = "right")
+
+```
+
+
+```{r, fig.height = 5, fig.width = 14}
+(p2[[3]] + p2[[4]] + p2[[5]]) +
+  plot_annotation(title = "Relationship between Time and Accident Risk") +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+ggsave("time.svg")
+```
+
+
+#### C: Effects of Weather Features on Accident Outcomes
+
+
+```{r, fig.height = 5, fig.width = 9}
+
+accidents_trunc <- accidents_trunc %>%
+  mutate(Wind_Direction = case_when(
+      Wind_Direction %in% c("N", "North", "NNE", "NNW", "NE", "NW") ~ "North",
+      Wind_Direction %in% c("E", "East", "ENE", "ESE") ~ "East",
+      Wind_Direction %in% c("S", "South", "SSW", "SW", "SE", "SSE") ~ "South",
+      Wind_Direction %in% c("W", "West", "WSW", "WNW") ~ "West",
+      Wind_Direction == "CALM" ~ "Calm",
+      Wind_Direction %in% c("VAR", "Variable") ~ "Variable"
+    )
+  ) %>% 
+  mutate(Wind_Direction = factor(Wind_Direction, levels = c("North", "South", "East", 
+                                                            "West", "Calm", "Variable"))) %>% 
+   mutate(
+    Weather_Condition = case_when(
+      Weather_Condition %in% c("Fair", "Clear", "Fair / Windy") ~ "Clear",
+      Weather_Condition %in% c("Cloudy", "Mostly Cloudy", "Partly Cloudy", "Mostly Cloudy / Windy",
+                               "Partly Cloudy / Windy", "Cloudy / Windy", "Scattered Clouds", "Overcast") ~ "Cloudy",
+      Weather_Condition %in% c("Fog", "Haze", "Mist", "Smoke", "Fog / Windy", "Smoke / Windy", "Partial Fog",
+                               "Patches of Fog / Windy", "Light Freezing Fog", "Widespread Dust", 
+                               "Drizzle and Fog", "Patches of Fog", "Shallow Fog", "Blowing Dust / Windy", 
+                               "Haze / Windy", "Sand / Dust Whirlwinds", "Blowing Dust") ~ "Fog/Haze/Dust",
+      Weather_Condition %in% c("Light Rain", "Thunder", "Rain", "Thunder in the Vicinity", 
+                               "Light Rain with Thunder", "Light Drizzle", "Drizzle",
+                               "Rain / Windy", "Light Drizzle / Windy", "Light Freezing Rain",
+                               "Light Rain / Windy", "N/A Precipitation", "Light Rain Shower",
+                               "Light Freezing Drizzle", "Thunder / Windy", "Light Freezing Rain / Windy", "Freezing Drizzle",
+                               "Light Thunderstorms and Rain") ~ "Rain",
+      Weather_Condition %in% c("Heavy T-Storm", "T-Storm", "Heavy T-Storm / Windy", "Heavy Rain", "Showers in the Vicinity",
+                               "T-Storm / Windy", "Heavy Rain / Windy", "Heavy Drizzle", "Freezing Rain",
+                               "Rain Shower", "Heavy Rain Shower", "Heavy Drizzle", "Thunderstorms and Rain") ~ "Heavy Rain",
+      Weather_Condition %in% c("Light Snow", "Snow", "Light Sleet", "Light Snow / Windy", "Snow / Windy", "Light Ice Pellets", 
+                               "Light Sleet / Windy", "Light Snow Shower", 
+                               "Light Blowing Snow", "Light Snow and Sleet", "Small Hail", "Light Thunderstorms and Snow") ~ "Snow",
+      Weather_Condition %in% c("Heavy Snow / Windy", "Heavy Snow", "Blowing Snow", "Blowing Snow / Windy", "Sleet",
+                               "Heavy Sleet", "Snow and Sleet", "Snow and Sleet / Windy", "Ice Pellets", 
+                               "Heavy Snow with Thunder", "Squalls / Windy", "Hail") ~ "Heavy Snow",
+      TRUE ~ "Other"))
+
+```
+
+
+##### 1: Wind Direction and Speed
+
+```{r, fig.height = 5, fig.width = 12}
+
+library(openair)
+
+wind_rose <- accidents_trunc %>% 
+  dplyr::select(Wind_Direction, `Wind_Speed(mph)`, Severity) %>%
+  mutate(
+    ws = `Wind_Speed(mph)`,
+    # 2) map each cardinal label (and “Calm”/“Variable”) to degrees or NA
+    wd = case_when(
+      Wind_Direction %in% c("North") ~ 0,
+      Wind_Direction %in% c("East") ~ 90,
+      Wind_Direction %in% c("South") ~ 180,
+      Wind_Direction %in% c("West") ~ 270,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  dplyr::select(ws, wd, Severity)
+
+
+svg("wind_speed_dir.svg", width = 12, height = 6)
+
+windRose(wind_rose, ws = "ws", wd = "wd", angle = 90,
+          paddle = FALSE, statistic = "prop.count", type = "Severity",
+         main = expression(bold("Accident Severity by Wind Direction/Speed")),
+         key.header   = "Wind Speed (mph)",
+         breaks = c(0, 5, 10, 15, Inf),
+         key.footer = "",
+         cols = alpha(c("#d7d7d7", "#78B7C5", "#E1AF00", "#F21A00"), 0.5),
+         annotate = F,
+         scales = list(font = 2),
+         par.settings=list(fontsize = list(text = 15),
+                           par.main.text = list(fontface = "bold"),
+                           par.sub.text = list(font = 1)))
+
+dev.off()
+
+
+```
+
+
+##### 2: Weather Condition
+
+```{r, fig.height = 5, fig.width = 10}
+p2[[7]] <- accidents_trunc %>% 
+  drop_na(`Visibility(mi)`) %>% 
+  mutate(Severity = as.factor(Severity)) %>% 
+  filter(`Visibility(mi)` < 20 & `Visibility(mi)` > 5) %>% 
+  ggplot(aes(x = Severity, y = `Visibility(mi)`)) +
+  geom_violin(aes(fill = Severity), show.legend = F) +
+  labs(x = "", title = "Visibility", y = "Visibility (mi)") +
+  theme(panel.grid.major.x = element_blank(),
+        plot.title = element_text(size = 14)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0")))
+
+
+p2[[8]] <- accidents_trunc %>% 
+  drop_na(`Humidity(%)`) %>% 
+  mutate(Severity = as.factor(Severity)) %>% 
+  ggplot(aes(x = Severity, y = `Humidity(%)`)) +
+  geom_violin(aes(fill = Severity), show.legend = F) +
+  labs(x = "", title =  "Humidity", y = "Humidity (%)") +
+  theme(panel.grid.major.x = element_blank(),
+        plot.title = element_text(size = 14)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0")))
+
+
+p2[[9]] <- accidents_trunc %>% 
+  drop_na(`Wind_Chill(F)`) %>% 
+  mutate(Severity = as.factor(Severity)) %>% 
+  ggplot(aes(x = Severity, y = `Wind_Chill(F)`)) +
+  geom_violin(aes(fill = Severity), show.legend = F) +
+  labs(x = "", title =  "Wind Chill", y = "Wind Chill (F)") +
+  theme(panel.grid.major.x = element_blank(),
+        plot.title = element_text(size = 14)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0")))
+
+
+p2[[10]] <- accidents_trunc %>% 
+  drop_na(`Temperature(F)`) %>% 
+  mutate(Severity = as.factor(Severity)) %>% 
+  ggplot(aes(x = Severity, y = `Temperature(F)`)) +
+  geom_violin(aes(fill = Severity), show.legend = F) +
+  labs(x = "", title =  "Temperature", y = "Temperature (F)") +
+  theme(panel.grid.major.x = element_blank(),
+        plot.title = element_text(size = 14)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0")))
+
+
+p2[[11]] <- accidents_trunc %>% 
+  drop_na(`Pressure(in)`) %>% 
+  mutate(Severity = as.factor(Severity)) %>% 
+  ggplot(aes(x = Severity, y = `Pressure(in)`)) +
+  geom_violin(aes(fill = Severity), show.legend = F) +
+  labs(x = "", title =  "Pressure", y = "Pressure (in)") +
+  theme(panel.grid.major.x = element_blank(),
+        plot.title = element_text(size = 14)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0")))
+
+
+(p2[[7]] + p2[[8]]) / 
+  (p2[[10]] + p2[[11]]) +
+  plot_annotation(title = "How Other Weather Features Impact Accident Severity")
+
+
+ggsave("weather.svg")
+  
+```
+
+
+```{r}
+
+t.test(accidents_trunc %>% filter(Severity == "Severe") %>% drop_na(`Visibility(mi)`) %>% pull(`Visibility(mi)`),
+       accidents_trunc %>% filter(Severity == "Minor") %>% drop_na(`Visibility(mi)`) %>% pull(`Visibility(mi)`))
+
+t.test(accidents_trunc %>% filter(Severity == "Severe") %>% drop_na(`Humidity(%)`) %>% pull(`Humidity(%)`),
+       accidents_trunc %>% filter(Severity == "Minor") %>% drop_na(`Humidity(%)`) %>% pull(`Humidity(%)`))
+
+t.test(accidents_trunc %>% filter(Severity == "Severe") %>% drop_na(`Temperature(F)`) %>% pull(`Temperature(F)`),
+       accidents_trunc %>% filter(Severity == "Minor") %>% drop_na(`Temperature(F)`) %>% pull(`Temperature(F)`))
+
+t.test(accidents_trunc %>% filter(Severity == "Severe") %>% drop_na(`Pressure(in)`) %>% pull(`Pressure(in)`),
+       accidents_trunc %>% filter(Severity == "Minor") %>% drop_na(`Pressure(in)`) %>% pull(`Pressure(in)`))
+
+
+# All significant
+```
+
+
+#### D: Accident Risk by Location
+
+
+```{r, fig.width = 9, fig.height = 5}
+west <- c("WA", "OR", "CA", "NV", "ID", "MT", "WY", "UT", "CO", "AZ", "NM")
+south <- c("OK", "TX", "AR", "LA", "MS", "AL", "TN", "KY", "GA", "SC", "FL",
+           "NC", "VA", "WV", "DC", "MD", "DE")
+midwest <- c("ND", "SD", "NE", "KS", "MN", "IA", "MO", "WI", "IL", "IN",
+             "OH", "MI")
+northeast <- c("PA", "NY", "NJ", "RI", "CT", "MA", "VT", "NH", "ME")
+
+
+us_counties <- map_data("county")
+
+
+county_accidents <- accidents_trunc %>% 
+  dplyr::select(Severity, County, State) %>% 
+  count(State, County, Severity) %>% 
+  mutate(County = tolower(County)) %>% 
+  inner_join(census_pop %>% dplyr::select(state, abbr) %>%  distinct(),
+             by = c("State" = "abbr")) %>% 
+  dplyr::select(state, County, Severity, n) %>% 
+  mutate(state = tolower(state)) %>% 
+  group_by(state, County) %>% 
+  mutate(total = sum(n)) %>% 
+  filter(Severity == "Severe") %>%
+  mutate(prop = round(n/total * 100, 1)) %>% 
+  mutate(prop_bin = case_when(
+    prop < 25 ~ "Below 25%",
+    prop <= 50 ~ "25% - 50%",
+    prop <= 75 ~ "50% - 75%",
+    prop > 75 ~ "Above 75%"
+  )) %>% 
+  mutate(prop_bin = factor(prop_bin, levels = c("Below 25%", "25% - 50%",
+                                                "50% - 75%", "Above 75%"))) %>% 
+  dplyr::select(state, County, Severity, prop_bin)
+  
+  
+base_county <- us_counties %>%
+  ggplot(aes(x = long, y = lat, group = group)) +
+  geom_polygon(color = "black", fill = NA) +
+  theme(
+    axis.text = element_blank(),
+    axis.line.x = element_blank(),
+    axis.line.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank()
+  ) +
+  labs(x = "", y = "",
+       title = "Share of Severe Crashes by County")  +
+  theme(plot.title = element_text(size = 14))
+  
+
+counties_crash_map <- us_counties %>%
+  inner_join(county_accidents, by = c("region" = "state",
+                                      "subregion" = "County"))
+
+
+p2[[12]] <- base_county +
+  geom_polygon(data = counties_crash_map, aes(
+  x = long, y = lat, group = group,
+  fill = prop_bin
+  ), color = "black") +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F07470", "#F6BDC0", "#FFEBEA"))) +
+  labs(fill = "")
+
+
+p2[[12]]
+  
+  
+```
+
+
+
+```{r, fig.width = 9, fig.height = 5}  
+
+p2[[13]] <- accidents_trunc %>%
+  mutate(region = case_when(
+  State %in% west ~ "West",
+  State %in% south ~ "South",
+  State %in% midwest ~ "Midwest",
+  State %in% northeast ~ "Northeast"
+  )) %>%
+  count(region, Severity) %>%
+  group_by(region) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(prop = round(n/total * 100, 1)) %>%
+  mutate(region = factor(region, levels = c("Midwest", "Northeast", "South", "West"))) %>%
+  ggplot(aes(x = region, y = prop, fill = Severity)) +
+  geom_col(position = "stack", color = "black") +
+  labs(x = "Region", y = "Proportion", fill = "",
+  title = "Proportion of Accident Severity by US Region") +
+  scale_y_continuous(labels = label_number(suffix = "%"), expand = c(0, 0.01, 0.11, 0.1)) +
+  scale_fill_manual(values = rev(c("#EA4C46", "#F6BDC0"))) +
+  theme(plot.title = element_text(size = 14),
+  panel.grid.major.x = element_blank())
+
+p2[[13]]
+
+```
+
+
+```{r, fig.height = 5, fig.width = 15}
+p2[[12]] + p2[[13]] +
+  plot_annotation("Geographical Analysis of Accident Severity")
+
+ggsave("location.svg")
+```
+
+
+```{r, fig.height = 5, fig.width = 9}
+road_infra <- accidents_trunc %>% 
+  dplyr::select(Severity, Amenity, Bump, Crossing,
+         Give_Way, Junction, No_Exit,
+         Railway, Roundabout, Station,
+         Stop, Traffic_Calming, Traffic_Signal,
+         Turning_Loop)
+
+
+road_long <- road_infra %>%
+  dplyr::select(-Roundabout) %>% 
+  rename(`Traffic Signal` = Traffic_Signal) %>% 
+  rename(`Traffic Calming` = Traffic_Calming) %>% 
+  rename(`No Exit` = No_Exit) %>% 
+  rename(`Give Way` = Give_Way) %>% 
+  pivot_longer(
+    cols      = -Severity,
+    names_to  = "feature",
+    values_to = "present"
+  ) %>%
+  filter(present) %>% 
+  mutate(feature = factor(feature, levels = rev(c("Junction", "Give Way", "Traffic Calming",
+                                              "Railway", "Stop", "Bump", "Amenity",
+                                              "No Exit", "Traffic Signal", "Station",
+                                              "Crossing", "Turning_Loop"))))
+
+ggplot(road_long, aes(x = feature, fill = Severity)) +
+  geom_bar(position = "fill", width = 0.7, color = "black") +
+  coord_flip() +
+  scale_fill_manual(values = c("Minor" = "#F6BDC0", "Severe" = "#EA4C46")) +
+  labs(
+    x     = "Road Infrastructure",
+    y     = "Proportion of Crashes",
+    fill  = "Severity",
+    title = "Presence of Road Infrastructure and Crash Severity"
+  ) +
+  theme(
+    panel.grid.major.y = element_blank()
+  ) +
+  scale_y_continuous(labels = label_number(scale = 100,
+    suffix = "%"), expand = c(0, 0, 0.01, 0.01))
+
+
+ggsave("road_infra.svg")
+```
+
+
+## Part 3: Putting it All Together with a Machine Learning Model
+
+```{r}
+ml_data <- accidents_trunc %>% 
+  mutate(
+    period = hour(Start_Time)) %>% 
+  mutate(period = case_when(
+    period >= 5 & period <= 11 ~ "Morning",
+    period >= 12 & period <= 16 ~ "Afternoon",
+    period >= 17 & period <= 20 ~ "Evening",
+    period >= 21 | (period <= 4) ~ "Night"
+  )) %>% 
+  mutate(period = factor(period, 
+                         levels = c("Morning", "Afternoon", "Evening", "Night"))) %>% 
+  mutate(day_date = wday(Start_Time, abbr = T, label = T)) %>% 
+  mutate(day_date = factor(day_date, levels = c("Mon", "Tue", "Wed", "Thu", "Fri",
+                                                "Sat", "Sun"))) %>% 
+  mutate(month_date = str_extract(month_date, "^[A-Za-z]+")) %>% 
+  mutate(month_date = factor(month_date, 
+                         levels = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"))) %>% 
+  mutate(day_date = case_when(
+    day_date %in% c("Mon", "Tue", "Wed", "Thu", "Fri") ~ "Weekday",
+    day_date %in% c("Sat", "Sun") ~ "Weekend"
+  )) %>% 
+  mutate(season = case_when(
+    month_date %in% c("Dec", "Jan", "Feb") ~ "Winter",
+    month_date %in% c("Mar", "Apr", "May") ~ "Spring",
+    month_date %in% c("Jun", "Jul", "Aug") ~ "Summer",
+    month_date %in% c("Sep", "Oct", "Nov") ~ "Fall"
+  )) %>% 
+  mutate(season = factor(season, levels = 
+                           c("Spring", "Summer", "Fall",
+                             "Winter"))) %>%
+  mutate(region = case_when(
+  State %in% west ~ "West",
+  State %in% south ~ "South",
+  State %in% midwest ~ "Midwest",
+  State %in% northeast ~ "Northeast"
+  )) %>% 
+  dplyr::select(Severity, period, day_date, season, Wind_Direction, `Wind_Speed(mph)`, Weather_Condition,
+         `Temperature(F)`, `Humidity(%)`, `Pressure(in)`, `Visibility(mi)`, region, Amenity, Bump, Crossing,
+         Give_Way, Junction, No_Exit, Railway, Station, Stop, Traffic_Calming, Traffic_Signal) %>% 
+  drop_na() %>% 
+  rename(day = day_date) %>% 
+  mutate(Wind_Direction = case_when(
+    Wind_Direction %in% c("Calm", "Variable") ~ "Other",
+    .default = Wind_Direction
+  ))
+
+
+```
+
+
+```{r}
+set.seed(695)
+
+
+ml_data <- ml_data %>% 
+  group_by(Severity) %>% 
+  slice_sample(n = 25000,
+               replace = F)
+
+
+# Train/test split
+split <- initial_split(ml_data, prop = c(0.8))
+
+train_data <- split %>%
+  training()
+
+test_data <- split %>%
+  testing()
+
+
+sc_train <- scale(train_data[ , c(6, 8, 9, 10, 11)])
+train_scaled <- as.data.frame(sc_train)
+
+means <- attr(sc_train, "scaled:center")
+sds   <- attr(sc_train, "scaled:scale")
+
+train_data$`Wind_Speed(mph)` <- c(scale(train_data$`Wind_Speed(mph)`))
+train_data$`Temperature(F)` <- c(scale(train_data$`Temperature(F)`))
+train_data$`Humidity(%)` <- c(scale(train_data$`Humidity(%)`))
+train_data$`Pressure(in)` <- c(scale(train_data$`Pressure(in)`))
+train_data$`Visibility(mi)` <- c(scale(train_data$`Visibility(mi)`))
+
+
+test_data$`Wind_Speed(mph)` <- (test_data$`Wind_Speed(mph)` - as.numeric(means[1])) / as.numeric(sds[1])
+test_data$`Temperature(F)` <- (test_data$`Temperature(F)` - as.numeric(means[2])) / as.numeric(sds[2])
+test_data$`Humidity(%)` <- (test_data$`Humidity(%)` - as.numeric(means[3])) / as.numeric(sds[3])
+test_data$`Pressure(in)` <- (test_data$`Pressure(in)` - as.numeric(means[4])) / as.numeric(sds[4])
+test_data$`Visibility(mi)` <- (test_data$`Visibility(mi)` - as.numeric(means[5])) / as.numeric(sds[5])
+
+```
+
+
+```{r}
+set.seed(695)
+
+y <- as.numeric(train_data$Severity) - 1
+x <- data.matrix(train_data[, -c(1)])
+
+# LASSO - Feature selection
+cv_model <- cv.glmnet(x, y, alpha = 1)
+best_lambda <- cv_model$lambda.min
+plot(cv_model)
+
+# Feature selection: According to best_lambda, we can exclude the '.' variables (these got reduced to 0)
+coefficient_model <- coef(glmnet(x, y, alpha = 1, lambda = best_lambda))
+selected_features <- rownames(coefficient_model)[coefficient_model@i[-1] + 1]
+
+selected_features
+```
+
+```{r}
+set.seed(695)
+
+model_logit <- glm(Severity ~ ., data = train_data, family = binomial) %>% 
+  stepAIC(direction = "both", trace = F)
+
+summary(model_logit)
+vif(model_logit)
+
+
+prob_predictions <- model_logit %>% 
+  predict(test_data, type = "response") # To get probability
+predictions <- ifelse(unname(prob_predictions) > 0.5, 1, 0)
+
+observed_predictions <- as.numeric(test_data$Severity) - 1
+
+
+# Accuracy of 66.2%!
+mean(predictions == observed_predictions) 
+
+# AUC Score: 72.1%
+auc(observed_predictions, prob_predictions)
+
+# Our model ranks true severe crashes above minor ones 72.1% of the time.
+
+```
+
+```{r}
+# Random Forest
+
+set.seed(695)
+
+cl <- makeCluster(detectCores() - 3)
+registerDoParallel(cl)
+
+
+fit_control <- trainControl(
+    method = "cv",
+    number = 5,
+    classProbs = TRUE,
+    summaryFunction = twoClassSummary,
+    allowParallel = T
+  )
+
+train_data$Severity <- factor(train_data$Severity, levels = c("Minor", "Severe"), labels = c("X0", "X1"))
+test_data$Severity <- factor(test_data$Severity, levels = c("Minor", "Severe"), labels = c("X0", "X1"))
+
+model_rf <- train(as.factor(Severity) ~ .,
+    data = train_data, method = "ranger",
+    importance = "permutation",
+    trControl = fit_control, verbose = F, tuneLength = 5, metric = "Accuracy" 
+  )
+
+stopCluster(cl)
+
+
+rf_prd_proba <- predict(model_rf, newdata = test_data[, -1], type = ("prob"))
+rf_prd <- predict(model_rf, newdata = test_data[, -1])
+
+
+
+# 68.5%
+mean(test_data$Severity == rf_prd) 
+
+
+# 75.5%
+auc(test_data$Severity, rf_prd_proba[, 2])
+
+
+```
+
+
+
+```{r, fig.width = 9, fig.height = 5}
+
+library(ranger)
+
+
+train_ranger <- train_data %>% 
+  rename(wind_speed = `Wind_Speed(mph)`,
+         temp = `Temperature(F)`,
+         humidity = `Humidity(%)`,
+         pressure = `Pressure(in)`,
+         visibility = `Visibility(mi)`)
+
+rf_ranger <- ranger(
+  Severity ~ .,
+  data       = train_ranger,
+  mtry  = 10,
+  min.node.size = 1,
+  importance = "permutation",  
+  probability = FALSE 
+)
+
+
+# 2. pull the vector
+imp_tbl <- enframe(
+  rf_ranger$variable.importance,
+  name  = "feature",
+  value = "importance"
+) %>%
+  arrange(desc(importance))
+
+feature_imp <- imp_tbl %>% 
+  head(10) %>% 
+  mutate(importance = round(importance / sum(importance) * 100, 2)) %>% 
+  mutate(feature = replace(feature, feature == "region", "Region")) %>%
+  mutate(feature = replace(feature, feature == "temp", "Temperature")) %>% 
+  mutate(feature = replace(feature, feature == "pressure", "Pressure")) %>% 
+  mutate(feature = replace(feature, feature == "period", "Period of Day")) %>% 
+  mutate(feature = replace(feature, feature == "season", "Season")) %>% 
+  mutate(feature = replace(feature, feature == "humidity", "Humidity")) %>% 
+  mutate(feature = replace(feature, feature == "Traffic_Signal", "Traffic Signal")) %>% 
+  mutate(feature = replace(feature, feature == "day", "Weekday/end")) %>% 
+  mutate(feature = replace(feature, feature == "wind_speed", "Wind Speed"))
+
+feature_imp %>%
+  ggplot(aes(y = reorder(feature, -importance, desc), x = importance)) +
+  geom_col(color = "black", fill = "deepskyblue4", alpha = 0.8) +
+  labs(y = "", title = "Feature Importance", x = "Importance (%)") +
+  xlim(c(0, 50)) +
+  scale_x_continuous(expand = c(0, 0, 0.2, 0.1)) +
+  theme(panel.grid.major.y = element_blank())
+
+
+ggsave("feature_imp.svg")
+
+```
+
+
+```{r, fig.height = 5, fig.width = 9}
+library(ROCR)
+
+pred <- prediction(prob_predictions, observed_predictions)
+perf <- performance(pred, "tpr", "fpr")
+
+df_logistic <- data.frame(Model = "Logit (Baseline)", FPR = perf@x.values[[1]], TPR = perf@y.values[[1]])
+
+
+
+
+pred <- prediction(rf_prd_proba[, 2], observed_predictions)
+perf <- performance(pred, "tpr", "fpr")
+
+df_rf <- data.frame(Model = "Random Forest", FPR = perf@x.values[[1]], TPR = perf@y.values[[1]])
+
+
+
+roc_plot <- ggplot() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black") +
+  labs(
+    x = "False Positive Rate",
+    y = "True Positive Rate"
+  )
+
+
+
+
+all <- rbind(df_logistic, df_rf) %>%
+  mutate(Model = fct(Model,
+    levels = c(
+      "Logit (Baseline)", "Random Forest")))
+
+logit_plot <- roc_plot +
+  geom_line(data = df_logistic, aes(x = FPR, y = TPR), color = "deepskyblue4",
+            linewidth = 1.25, alpha = 0.8) +
+  ggplot2::labs(
+    title = "Logistic Regression (Baseline)",
+  ) +
+  scale_x_continuous(expand = c(0, 0, 0, 0.01)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme(plot.title = element_text(size = 14))
+
+
+rf_plot <- roc_plot +
+  geom_line(data = df_rf, aes(x = FPR, y = TPR), color = "orangered2", 
+            linewidth = 1.25, alpha = 0.8) +
+  ggplot2::labs(
+    title = "Random Forest",
+    y = ""
+  ) +
+  scale_x_continuous(expand = c(0, 0, 0, 0.01)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme(plot.title = element_text(size = 14))
+
+roc_plot +
+  geom_line(data = all, aes(x = FPR, y = TPR, color = Model, group  = Model),
+            linewidth = 1.25, alpha = 0.8) +
+  labs(title = "Comparing ROC Curves") +
+  scale_color_manual(values = c("deepskyblue4", 
+                                "orangered2")) +
+  scale_x_continuous(expand = c(0, 0, 0, 0.01)) +
+  scale_y_continuous(expand = c(0, 0)) 
+
+# logit_plot + rf_plot +
+#   plot_annotation(title = "ROC Curve")
+
+
+ggsave("roc.svg")
+
+
+```
+

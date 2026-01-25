@@ -1,0 +1,229 @@
+---
+title: "Data Challenge"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(patchwork)
+library(tidyverse)
+
+my_theme <- theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12, color = "black"),
+    axis.title = element_text(size = 14, color = "black", face = "plain"),
+    title = element_text(size = 14, color = "black", face = "bold"),
+    legend.text = element_text(size = 12, color = "black"),
+    legend.title = element_text(
+      color = "black",
+      size = 12, margin =
+        ggplot2::margin(t = 0, r = 20, b = 0, l = 0, unit = "pt")
+    ),
+    strip.text = element_text(size = 20, color = "black"),
+    panel.grid.minor = element_blank(),
+    panel.background = element_rect(fill = "#F7F7F7"),
+    panel.border = element_rect(fill = NA, color = "#0c0c0c", linewidth = 0.6),
+    legend.position = "bottom",
+    panel.spacing = unit(15, "pt")
+  )
+
+theme_set(my_theme)
+
+
+combined_data = read.csv("combined_data.csv")
+
+
+# Add Nonrenewable energy
+combined_data <- combined_data %>%
+  mutate(Non_Renewables_Share = Electricity_Prod - Renewables_Share)
+```
+
+
+- How might energy production trends be related to the adoption of EVs? What does this say about attitudes toward green technologies around the world?
+
+
+
+
+```{r, fig.width = 10, fig.height = 6}
+
+p = list()
+
+p[["general"]] = combined_data %>%
+  group_by(year) %>% 
+  summarize(sales = mean(Total_Sales),
+            renewable = sum(Renewables_Share) / 1e6,
+            nonrenewable = sum(Non_Renewables_Share) / 1e6) %>% 
+  ggplot(aes(x = year)) +
+  geom_line(aes(y = renewable, color =  "Renewable"), size = 2) +
+  geom_line(aes(y = nonrenewable, color = "Nonrenewable"), size = 2) +
+  geom_line(aes(y = sales), color = "purple3", size = 2, linetype = "dashed") +
+  scale_y_continuous(
+    sec.axis = sec_axis(~ ., name = "Sales Share (%)")
+  ) +
+  annotate("text", x = 2018.65, y = 7.75, label = "EV Sales") +
+  annotate("segment", x = 2019, y = 8.25, xend = 2019.5, yend = 9, arrow = arrow(type = "closed", length = unit(0.02, "npc"))) +
+  labs(x = "",
+       y = "Electricity Production (million GWh)",
+       color = "",
+       title = "Electricity Production and EV Sales Share Over the Years")  +
+  scale_color_manual(values = c("Renewable" = "deepskyblue4", "Nonrenewable" = "orangered2")) +
+  theme(axis.title.y.right = element_text(angle = 90))
+
+```
+
+
+```{r, fig.width = 10, fig.height = 6}
+yearly_correlation_ev_types = combined_data %>%
+  filter(!is.na(BEV_Sales) & !is.na(PHEV_Sales)) %>%
+  group_by(year) %>%
+  summarize(
+    correlation_renewable_bev = cor(BEV_Sales, Renewables_Share),
+    correlation_renewable_phev = cor(PHEV_Sales, Renewables_Share),
+    correlation_nonrenewable_bev = cor(BEV_Sales, Non_Renewables_Share),
+    correlation_nonrenewable_phev = cor(PHEV_Sales, Non_Renewables_Share)
+  )
+
+p[["renewable"]] = ggplot(yearly_correlation_ev_types, aes(x = year)) +
+  geom_line(aes(y = correlation_renewable_bev, color = "BEV vs Renewable"), size = 2) +
+  geom_line(aes(y = correlation_renewable_phev, color = "PHEV vs Renewable"), size = 2) +
+  ylim(c(0, 1)) +
+  labs(
+    title = "Correlation: Renewable Energy\nand Sales by EV Type",
+    x = "",
+    y = "Correlation",
+    color = ""
+  ) +
+  scale_color_manual(values = c("BEV vs Renewable" = "#C5050C", "PHEV vs Renewable" = "darkgreen"))
+
+p[["nonrenewable"]] = ggplot(yearly_correlation_ev_types, aes(x = year)) +
+  geom_line(aes(y = correlation_nonrenewable_bev, color = "BEV vs Nonrenewable"), size = 2) +
+  geom_line(aes(y = correlation_nonrenewable_phev, color = "PHEV vs Nonrenewable"), size = 2) +
+  ylim(c(0, 1)) +
+  labs(
+    title = "Correlation: Nonrenewable Energy\nand Sales by EV Type",
+    x = "",
+    y = "",
+    color = ""
+  ) +
+  scale_color_manual(values = c("BEV vs Nonrenewable" = "#C5050C", "PHEV vs Nonrenewable" = "darkgreen"))
+
+```
+
+
+```{r, fig.width = 10, fig.height = 10}
+
+p[["general"]] / (p[["renewable"]] + p[["nonrenewable"]])
+
+ggsave("general_production_sales.svg")
+
+```
+
+
+***We can observe that both energy types are positively correlated with EV adoption. As more renewable or nonrenewable energy are utilized to produce electricity, the higher the EV sales share.***
+
+***At a more micro level, that is, if we look by EV type, we can also gather a very strong relationship between sales and both energy types.****
+
+***These results seem to imply that EV adoption is related to general electricity production and infrastructure (since it is correlated with both energy types) rather than specifically renewable energy initiatives. EV sales might not directly drive or impact renewable energy production as supported by these trends.***
+
+***Thus, this bags the question, are we not even moving towards renewable energy? Let's investigate further***.
+
+***As a side note, we only plotted BEV and PHEV sales, but not FCEVs. This is because we have more than half of missing FCEV sales data, thus including it in our graph might not show results that is representative of the actual correlation.***
+
+
+```{r, fig.width = 10, fig.height = 6}
+combined_data %>%
+  group_by(year, region) %>% 
+  summarize(sales = mean(Total_Sales),
+            renewable = sum(Renewables_Share) / 1e5,
+            nonrenewable = sum(Non_Renewables_Share) / 1e5) %>% 
+  ggplot(aes(x = year)) +
+  geom_line(aes(y = renewable, color =  "Renewable"), size = 2) +
+  geom_line(aes(y = nonrenewable, color = "Nonrenewable"), size = 2) +
+  geom_line(aes(y = sales), color = "purple3", size = 2, linetype = "dashed") +
+  scale_y_continuous(
+    sec.axis = sec_axis(~ ., name = "Sales Share (%)")
+  ) +
+  facet_wrap(~ region, scales = "free_y") +
+  labs(x = "",
+       y = "Electricity Production (100 TWh)",
+       color = "",
+       title = "Electricity Production and EV Sales Over the Years")  +
+  scale_color_manual(values = c("Renewable" = "deepskyblue4", "Nonrenewable" = "orangered2")) +
+  theme(axis.title.y.right = element_text(angle = 90),
+        axis.text.y.right = element_text(angle = 90))
+
+
+ggsave("region_production_sales.svg")
+
+```
+
+***We can break down the electricity production and EV sales share further by regions around the world. These graphs actually paint a different story from our observation above.***
+
+***Again, like previously discussed, the general consensus seems to be that an increase in non-renewable/renewable energy leads to an increase in EV sales***.
+
+***However, we can also see that most of the regions' share of renewables and non-renewables are converging, such as Oceania and Europe. In South America (based on our data), they are already prioritizing renewables over nonrenewables to generate electricity.***
+
+***For NA, we can observe a slow increase in renewables, but a stagnant non-renewables share.***
+
+***So, really, EV adoption is related to the increase of renewables. The ever-increasing non-renewables share is, in fact, dominated by Asian and North American countries***.
+
+
+***Both energy types are correlated with EV adoption, but the increasing correlation with renewable energy in recent years may suggest a shift in attitude or policy towards pairing EV adoption with renewable energy sources, potentially reflecting a preference for greener technologies globally***
+
+
+```{r, fig.width = 10, fig.height = 6}
+average_ratio_per_year = combined_data %>% 
+  group_by(year) %>%
+  summarize(ratio = sum(Renewables_Share) / sum(Non_Renewables_Share))
+
+ggplot(average_ratio_per_year, aes(x = year, y = ratio)) +
+  geom_line(color = "orangered2", size = 2) +
+  labs(
+    title = "Renewable to Nonrenewable Energy Ratio Over the Years",
+    x = "",
+    y = "Renewable:Nonrenewable"
+  ) 
+
+```
+
+
+***Aha, it wasn't obvious earlier, but now it's clear as daylight that the overall trend suggests a global movement towards renewable energy since 2010, as shown by the increasing renewable-to-nonrenewable energy ratio. Although there are small fluctuations, the upward trajectory implies that countries are gradually increasing their reliance on renewable energy sources relative to non-renewables.***
+
+
+```{r, fig.width = 10, fig.height = 6}
+
+cor_ratio_all = combined_data %>% 
+  group_by(year) %>% 
+  summarize(corr_all_ratio = cor(ratio_renew_nonrenew, Total_Sales))
+
+cor_ratio_bev = combined_data %>% 
+  drop_na(BEV_Sales) %>% 
+  group_by(year) %>% 
+  summarize(corr_bev_ratio = cor(ratio_renew_nonrenew, BEV_Sales))
+
+cor_ratio_phev = combined_data %>% 
+  drop_na(PHEV_Sales) %>% 
+  group_by(year) %>% 
+  summarize(corr_phev_ratio = cor(ratio_renew_nonrenew, PHEV_Sales))
+
+corr_ratio = cor_ratio_all %>% 
+  inner_join(cor_ratio_bev, by = "year") %>% 
+  inner_join(cor_ratio_phev, by = "year") 
+  
+
+cor_ratio_all %>% 
+  filter(year >= 2014) %>% 
+  ggplot(aes(x = year)) +
+  geom_line(aes(y = corr_all_ratio), color = "deepskyblue4", size = 2) +
+  labs(x = "",
+       y = "Correlation Coefficient",
+       title = "How Renewable:Non-Renewable Energy Ratio Correlates with EV Sales") 
+
+ggsave("corr_ratio.svg")
+
+```
+
+***To hit the point home, the increasing ratio of renewable-to-nonrenewable is correlated with increasing EV sales.***
+

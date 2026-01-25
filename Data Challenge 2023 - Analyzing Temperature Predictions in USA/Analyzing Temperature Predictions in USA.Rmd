@@ -1,0 +1,1069 @@
+---
+title: "Data Challenge"
+output: html_document
+---
+
+Note: Please allow 5 minutes to run the whole code.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message=FALSE) 
+
+# Makes sure that the required packages are properly installed; if they are not installed, R helps to install them 
+# Retrieved on 10/14/23 from - https://stackoverflow.com/questions/4090169/elegant-way-to-check-for-missing-packages-and-install-them 
+required_packages = c("tidyverse", "lubridate", "glmnet", "tidymodels", "caret", "car", "xgboost", "Metrics", "MASS", "Ckmeans.1d.dp", "pdp", "gridExtra", "usmap", "sp", "sf", "FSinR")
+new_packages <- required_packages[!(required_packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)){
+  install.packages(new_packages)
+}
+
+library(tidyverse)
+library(lubridate)
+library(glmnet)
+library(tidymodels)
+library(xgboost)
+library(caret)
+library(Metrics)
+library(car)
+library(MASS)
+library(Ckmeans.1d.dp)
+library(pdp)
+library(gridExtra)
+library(usmap)
+library(sp)
+library(sf)
+library(FSinR)
+
+
+options(warn = -1)
+```
+
+
+```{r read-data, echo = FALSE}
+# Read Weather data and remove rows with missing data
+weather = read_csv("weather_data.csv")[-1] %>%
+  drop_na() %>% 
+  rename(state = state.x) %>% 
+  mutate(region = case_when(
+    state %in% c("ME", "MA", "NY", "NJ", "PA", "CT", "NH", "VT", "RI") ~ "Northeast",
+    state %in% c("IL", "IN", "MI", "OH", "WI", "IA", "KS", "MN", "MO", "NE", "ND", "SD") ~ "Midwest",
+    state %in% c("FL", "GA", "DE", "MD", "NC", "SC", "VA", "DC", "WV", "AL", "KY", "MS", "TN", "AR", "LA", "OK", "TX") ~ "South",
+    state %in% c("AZ", "CO", "ID", "MT", "NV", "NM", "UT", "WY", "AK", "CA", "HI", "OR", "WA") ~ "West"
+  )) %>% 
+  dplyr::select(date, city, state, region, everything())
+```
+
+### Questions to Answer
+
+- When do weathermen make more accurate predictions? 
+- If predictions are inaccurate, what are the scenarios they causes them to overestimate the temperature? Underestimate? 
+
+---
+
+### Visualization 
+
+```{r}
+weather = weather %>% 
+  mutate(pred_error = forecast_temp - observed_temp)
+
+# This doesn't make sense; -10 forecasted temperature during the Summer? We can remove this
+weather %>% 
+  slice_min(pred_error, n = 1) %>% 
+  print(n = Inf, width = Inf)
+
+
+weather = weather %>% 
+  filter(!(pred_error == -69))
+
+# On the other hand, the forecast temperature for these make sense. Atlanta does not usually experience cold temperature at this time of the year
+weather %>% 
+  slice_max(pred_error, n = 2) %>% 
+  print(n = Inf, width = Inf)
+
+
+colors = c("Forecast" = "blue", "Observed" = "red")
+
+ggplot(data = weather) +
+  geom_histogram(aes(x = observed_temp, y = ..density..), binwidth = 10, fill = "red", color = "black", alpha = 0.3) +
+  geom_histogram(aes(x = forecast_temp, y = ..density..), binwidth = 10, fill = "blue", color = "black", alpha = 0.3) +
+  geom_density(aes(x = observed_temp, color = "Observed"), size = 2, alpha = 0.3) +
+  geom_density(aes(x = forecast_temp, color = "Forecast"), size = 2, alpha = 0.3) +
+  geom_hline(yintercept = 0) +
+  labs(
+    x = "Forecast and Observed Temperatures (degrees Fahrenheit)",
+    y = "Density",
+    colour = "Temperature") +
+  scale_color_manual(values = colors) +
+  ggtitle("Distribution of Forecast and Observed Temperatures in USA", subtitle = "01/30/2021 - 05/30/2022")
+  
+```
+
+> **Observation:**
+
+- It appears that both the forecast temperature and observed temperature throughout the United States follows a normal distribution. 
+
+- Looking at a different perspective, from 30 January 2021 - 30 May 2022, the distributions of the observed temperature and forecast temperature overlay very well and appear highly similar when plotted together. This suggests that the model used to forecast temperatures have, on average, high accuracy. 
+
+- Since we now know that these two variables have somewhat normal distributions, we can proceed with a parametric test.
+
+---
+
+##### Hypothesis Testing 
+
+> **Hypotheses:**
+
+$$
+H_0: \mu_{\text{forecast}} = \mu_{\text{observed}} \\
+H_a: \mu_{\text{forecast}} \neq \mu_{\text{observed}}
+$$
+
+> **Test Statistic:**
+
+```{r}
+get_forecast = weather[["forecast_temp"]]
+get_observed = weather[["observed_temp"]]
+
+n_forecast = length(get_forecast)
+n_observed = length(get_observed)
+se_slow = sqrt(var(get_forecast)/n_forecast + var(get_observed)/n_observed)
+
+
+tstat_forecast_v_observed = (mean(get_forecast) - mean(get_observed)) / se_slow
+tstat_forecast_v_observed
+
+
+## Check
+check_ttest = t.test(weather$forecast_temp, weather$observed_temp, alternative = "two.sided")
+unname(check_ttest$statistic)
+```
+
+> **p-value:**
+
+```{r}
+2*pt(-abs(tstat_forecast_v_observed), n_forecast + n_observed - 2)
+
+## Check
+check_ttest$p.value
+
+```
+
+> **Interpretation:**
+
+- p-value is the probability under the null hypothesis, of obtaining a result equal to or more extreme than what was actually observed.
+
+- There is overwhelming evidence (p-value = 0.0005391, dof = 161155, two sided t-test) against the null hypothesis that the mean forecast temperature is equal to the mean observed temperature.
+
+- Said another way, we can conclude that there is a difference in mean forecast temperature and mean observed temperature.
+
+--- 
+
+### Analyzing Prediction Errors
+
+```{r}
+# Calculating R-squared of data: 97.9% of the variance in the temperature measurements is explained by the independent variables in the model used.
+rss = sum(weather$pred_error^2)
+tss = sum((weather$observed_temp - mean(weather$observed_temp))^2)
+rsquared = 1 - (rss/tss)
+rsquared
+
+
+ggplot(weather, aes(x = pred_error)) + 
+  geom_histogram(fill = "lightblue", color = "black") +
+  xlim(-15, 15) +
+  labs(
+    x = "Prediction Error", 
+    y = "Count") +
+  ggtitle("Temperature Prediction Errors in USA", subtitle = "01/30/2021 - 05/30/2022")
+
+
+ggplot(weather, aes(x = pred_error)) + 
+  geom_boxplot(fill = "lightblue", color = "black") +
+  labs(
+    x = "Prediction Error") +
+  ggtitle("Distribution of Temperature Prediction Errors in USA", subtitle = "01/30/2021 - 05/30/2022")
+
+prediction_summary = summary(weather$pred_error)
+prediction_summary
+
+```
+
+- According to the histogram, the errors are normally distributed, as expected.
+
+- Since `forecast_temp` and `observed_temp` are independent normal distributions, the difference Errors = `forecast_temp` - `observed_temp` is also normally distributed.
+
+- The boxplot provides us with a better overview of the prediction errors. This plot reveals the presence of outliers, with some errors being very large (but still reasonable) in magnitude.
+
+- The mean error is negative (-0.383), indicating that on average, the forecasts slightly underestimate temperatures. Nonetheless, it is not too far off from 0 which is in tandem with the density plots we have graphed earlier.
+
+- Now, we zero in on those outliers and try to identify what factors lead to the overestimation or underestimation of temperatures. 
+
+$$
+\text{Lower Outlier = Q1 - (1.5 * IQR)} \\
+\text{Upper Outlier = Q3 + (1.5 * IQR)}
+$$
+
+---
+
+### Logistic Model: Classifying Positive / Negative Outliers
+
+- First, we try to create a logistic model on the outliers. The reason being is we want to identify the factors that lead to overestimation and underestimation. Notice that this now becomes a binary classification problem, where we set 1 = Overestimation and 0 = Underestimation.
+
+- The idea is we first split the dataset into training and test datasets, apply standard scaling on all numerical variables, and perform LASSO regularization to determine the best features. Then, we fit a logistic model and perform bidirectional stepwise selection to get our final model. 
+
+
+```{r, fig.height=5}
+set.seed(8897)
+
+# Extracting the outliers
+iqr_error = IQR(weather$pred_error)
+upper_fence = prediction_summary[["3rd Qu."]] + (1.5 * iqr_error)
+lower_fence = prediction_summary[["1st Qu."]] - (1.5 * iqr_error)
+outlier_weather = weather[which((weather$pred_error < lower_fence) | (weather$pred_error > upper_fence)), ]
+
+
+# Perform some data wrangling
+outlier_weather = outlier_weather %>% 
+  mutate(month = lubridate::month(date, label = TRUE)) %>% 
+  mutate(season = case_when(
+    month %in% c("Sep", "Oct", "Nov") ~ "Fall",
+    month %in% c("Dec", "Jan", "Feb") ~ "Winter",
+    month %in% c("Mar", "Apr", "May") ~ "Spring", 
+    month %in% c("Jun", "Jul", "Aug") ~ "Summer"
+  )) %>% 
+  dplyr::select(date, month, season, everything()) %>% 
+  mutate(season = fct_relevel(season, c("Fall", "Winter", "Spring", "Summer")))
+
+outlier_weather = outlier_weather %>% 
+  mutate(error_positive = ifelse(pred_error >= 0, 1, 0))
+
+# Convert all character-type columns into factor-type
+character_cols = names(outlier_weather)[sapply(outlier_weather, is.character)]
+outlier_weather[character_cols] = lapply(outlier_weather[character_cols], as.factor)
+
+# Splitting into training and testing datasets
+split = initial_split(outlier_weather, prop = 0.75)
+train_outlier = split %>% 
+  training()
+test_outlier = split %>% 
+  testing()
+
+# Feature scaling: Logistic Regression loves standardization
+train_outlier = train_outlier %>% 
+  dplyr::select(-pred_error, -date) %>% 
+  mutate_at(vars(-c("month", "season", "state", "city", "region", "high_or_low", "forecast_outlook", "koppen", "error_positive")), scale)
+
+test_outlier = test_outlier %>% 
+  dplyr::select(-pred_error, -date) %>% 
+  mutate_at(vars(-c("month", "season", "state", "city", "region", "high_or_low", "forecast_outlook", "koppen", "error_positive")), scale)
+
+```
+
+- Before proceeding further with choosing the predictor variables, it is best to analyze them one-by-one. We can ignore columns such as `date` as we have already a `month` and a `season` column. We can also omit `observed_temp`, `forecast_temp`, and `pred_error` as our response variable is derived from these three. `observed_precip`, although could be useful, seems illogical for us to include it in our model as the forecasts are made prior to any rain observations. We feel that `avg_annual_precip` can also be dropped as there is not any significant relationship between annual data and daily (temperature) data. 
+
+- `koppen` can also be ignored. Through some research, we found that the Koppen climate classification system ignores variations in temperature. As we are trying to build our model around temperature, including `koppen` would cause issues when fitting.
+
+- Now that we know which variables to include and vice versa, we can proceed further with fitting a logistic regression model.
+
+```{r}
+set.seed(8897)
+y = train_outlier$error_positive
+x = data.matrix(train_outlier[, c("month", "city", "state", "region", "high_or_low", "forecast_hours_before", "forecast_outlook", "lon", "lat", "elevation", "distance_to_coast", "wind", "elevation_change_four", "elevation_change_eight")]) # Using month instead of season yields better results
+
+
+# LASSO Regression - Feature selection
+cv_model <- cv.glmnet(x, y, alpha = 1, family = "binomial")
+best_lambda = cv_model$lambda.min
+plot(cv_model)
+
+coefficient_model = coef(glmnet(x, y, alpha = 1, family = "binomial", lambda = best_lambda))
+
+# Feature selection: According to best_lambda, we can exclude the city, forecast_hours_before,
+# distance_to_coast, and elevation_change_eight variables (these got reduced to 0)
+coefficient_model
+selected_features = rownames(coefficient_model)[coefficient_model@i[-1] + 1]
+
+```
+
+```{r Model 1}
+set.seed(8897)
+
+# A. Fitting a logistic regression model with the selected variables above, optimized by bi-directional step-wise selection  
+formula_model = as.formula(paste("as.factor(error_positive) ~ 1 +", paste(selected_features, collapse=" + ")))
+model_lm = glm(formula_model, data = train_outlier, family = binomial) %>% 
+  stepAIC(direction = "both", trace = F)
+summary(model_lm)
+
+vif(model_lm)
+
+```
+
+- We are left with just `month`, `state`, `high_or_low`, and `forecast_outlook` variables after performing all those variable selections. In a model, it is important for us to check if there is any presence of multicollinearity as it could cause overfitting. 
+
+- We use vif() to identify any correlations between the variables. Think of it as the number that represents the strength of the relationship between two or more variables. The higher the number, the more correlated those variables are.
+
+Based on the GVIF^2(1/(2*Df)) metric (Generalized Variance Inflation Factor or Generalized Collinearity Diagnostics), it looks like `month`, `state`, `high_or_low`, and `forecast_outlook` have GVIF values very close to 1, thus this implies that there are minimal correlation for these variables. This is good news, indicating that our model sets a great benchmark for any further improvements. 
+
+- We proceed with predicting unseen test data with our newly-created Logistic Regression model.
+
+```{r}
+# B. Predictions
+prob_predictions = model_lm %>% 
+  predict(test_outlier, type = "response") # To get probability
+predictions = ifelse(unname(prob_predictions) > 0.5, 1, 0)
+observed_predictions = test_outlier$error_positive
+mean(predictions == observed_predictions) # Accuracy of ~67.5%!
+
+proba_lm = predict(model_lm, test_outlier,type= "response")
+auc(observed_predictions, proba_lm) # ~0.708!
+
+```
+
+- We obtained an accuracy of ~67.5% and an AUC (Area Under the Curve) score of ~0.71 against the unseen test data. This might be a good enough accuracy, but let us try building a model that has an improved accuracy and fit.  
+
+- Also, we do not have any `lat` or `lon` variables in our final model. These two variables might be good additions as they are known to affect temperature predictions.
+
+---
+
+### Using Extreme Gradient Boosting Classifier to Improve on Previous Model
+
+- Gradient boosting is a machine learning algorithm that trains multiple weak models with the ultimate aim of creating the best final model based on the aforementioned algorithms. An extreme gradient boosting classifier is a regularized form of the existing gradient-boosting algorithm.
+
+- We first perform repeated cross validation on an Extreme Gradient Boosting model to obtain the best configuration.
+
+- Next, we evaluate the model using AUC to understand how much better can this model discriminate between 1s and 0s. We also calculate the model accuracy on unseen data to obtain additional perspective on model performance. 
+
+```{r Model 2}
+set.seed(8897)
+
+# A better model - Extreme Gradient Boosting classifier
+# Adapted from: https://amirali-n.github.io/ExtremeGradientBoosting/
+
+# Perform cross validation
+fit_control = trainControl(method = "repeatedcv", number = 3, repeats = 3)
+gbm_fit1 = train(formula_model, data = train_outlier, method = "xgbTree", trControl = fit_control, verbose = FALSE, verbosity = 0)
+
+# Understanding model performance
+predicted_proba_outlier = predict(gbm_fit1, test_outlier,type= "prob")[,2]
+predicted_outlier = predict(gbm_fit1, test_outlier)
+
+auc(test_outlier$error_positive, predicted_proba_outlier) # Better AUC:  0.768
+mean(observed_predictions == predicted_outlier) # Better accuracy: 70.4%
+
+```
+
+- An AUC score of 0.768 and accuracy of 70.4% means that this model is a big improvement compared to the previous model. Thus, we would prefer to use this algorithm to find out when do the forecasters make underestimations/ overestimations of temperature.
+
+- Now the question is, how do we identify which variables are the most important? How do we come to understand which of those variables lead to forecast underestimations/ overestimations?
+
+- We can use the bestTune parameters from the model above to identify the best iteration when performing a cross-validated Extreme Gradient Boosting training model.
+
+- Using the bestTune parameters and the newly-identified best iteration, we can create a similarly-configured xgb model that allows us to obtain a plot of feature importance. 
+
+```{r}
+set.seed(8897)
+
+# Parameters to find feature importance from the extreme gradient boosting classifier
+gbm_params = list(
+  "eta" = gbm_fit1$bestTune$eta,
+  "max_depth" = gbm_fit1$bestTune$max_depth,
+  "gamma" = gbm_fit1$bestTune$gamma,
+  "min_child_weight" = gbm_fit1$bestTune$min_child_weight,
+  "nthread" = 4,
+  "objective" = "binary:logistic"
+)
+
+
+# Data Preprocessing of training and testing data for final extreme gradient boosting model
+sumwpos = sum(test_outlier$error_positive == 1)
+sumwneg = sum(test_outlier$error_positive == 0)
+
+train_data = train_outlier[, !(names(train_outlier) %in% "error_positive") & names(train_outlier) %in% selected_features]
+train_label = train_outlier$error_positive
+train_data = sparse.model.matrix(~ . -1, data = train_data)
+
+test_data = test_outlier[, !(names(test_outlier) %in% "error_positive") & names(test_outlier) %in% selected_features]
+test_label = test_outlier$error_positive
+test_data = sparse.model.matrix(~ . -1, data = test_data)
+
+# Another cross validation based on the best tune parameters; the reason we performed another cross validation is to obtain the best iteration that produces a model with the highest accuracy
+xgb_cross_val = xgb.cv(params = gbm_params,
+                 data = train_data,
+                 nrounds = 500,
+                 nfold = 10,
+                 showsd = TRUE,
+                 label = train_label,
+                 metrics = "auc",
+                 stratified = TRUE,
+                 verbose = FALSE,
+                 early_stopping_rounds = 50,
+                 print_every_n = 1L,
+                 scale_pos_weight = sumwneg/sumwpos)
+
+
+# Train an optimized xgb model from the best tune parameters and best iteration to allow us to plot feature importance 
+# We do this to obtain a model as similar as possible to the evaluated xgb classifier in the previous chunk
+xgb_model = xgboost(data = train_data,
+                  label = train_label,
+                  max.depth = gbm_fit1$bestTune$max_depth,
+                  eta = gbm_fit1$bestTune$eta,
+                  nthread = 4,
+                  min_child_weight = gbm_fit1$bestTune$min_child_weight,
+                  scale_pos_weight = sumwneg/sumwpos,
+                  eval_metric = "auc",
+                  nrounds = xgb_cross_val$best_iteration,
+                  verbose = FALSE,
+                  objective = "binary:logistic")
+
+xgb_importance = xgb.importance(feature_names = colnames(train_data), model = xgb_model)
+
+gg = xgb.ggplot.importance(importance_matrix = xgb_importance[1:10,])
+
+gg + 
+  geom_bar(aes(x = reorder(Feature, Importance), y = Importance), stat = "identity", fill = "lightblue", color = "black") +
+  theme(legend.position = "none") +
+  ggtitle("Feature Importance")
+
+```
+
+- It looks like `high_or_low`, `longitude`, `latitude`, `elevation_change_four`, `elevation`, `wind`, a Sunny `forecast_outlook` and `month` of February, January, and March are the most important features. Let us do further analysis to understand how these features contribute to overestimation / underestimation of forecast temperatures.  
+
+- Here, we use a Partial Dependence Plot (PDP) to interpret how these important features contribute to the direction of our y (error_positive).
+
+- For further understanding, check out [https://rpubs.com/vishal1310/QuickIntroductiontoPartialDependencePlots] by Vishal Sharma.
+
+```{r, fig.height = 6, fig.width = 12}
+pdp_list = list()
+
+for (i in xgb_importance$Feature[1:10]){
+  pdp_obj = partial(xgb_model,
+                    pred.var = c(i),
+                    train = train_data,
+                    grid.resolution = 100)
+  
+  pdp_list[[i]] = pdp_obj
+}
+
+# Plotting each variable's effects on our y value (error_positive)
+p1 = autoplot(pdp_list[[1]], color = "cyan", size = 2)  
+p2 = autoplot(pdp_list[[2]], color = "red", size = 2)
+p3 = autoplot(pdp_list[[3]], color = "cyan", size = 2)
+p4 = autoplot(pdp_list[[4]], color = "red", size = 2)
+p5 = autoplot(pdp_list[[5]], color = "cyan", size = 2)
+p6 = autoplot(pdp_list[[6]], color = "cyan", size = 2)
+p7 = autoplot(pdp_list[[7]], color = "cyan", size =2)
+p8 = autoplot(pdp_list[[8]], color = "red", size = 2)
+p9 = autoplot(pdp_list[[9]], color = "cyan", size = 2)
+p10 = autoplot(pdp_list[[10]], color = "cyan", size = 2)
+
+grid.arrange(p1, p2, p3, p4, p5, 
+             p6, p7, p8, p9, p10,
+             ncol=3, top = "How the 10 Most Important Features Affect Overestimation/Underestimation\n(Red = Tends to Higher yhat          Blue = Tends to Lower yhat)")
+```
+
+- From the graph above, we can see that forecasters, on average, tend to make overestimations when:
+  - the location has higher `longitude` and lower `latitude` 
+  - the forecast is for high temperature 
+  - the location has extremely high or lower `elevation_change_four`
+  - the location has medium-to-high `elevation` 
+  - the `wind` speed is higher or extremely low 
+  
+- In contrast, we can see that forecasters tend to make underestimations when:
+  - the forecast is for low temperature  
+  - the location has lower `longitude`
+  - the location has high `elevation_change_four`
+  - the location has extremely high `elevation` 
+  - the forecast is made on the `month` of January, February, or March (March has minimal effect on underestimations)
+  - the `forecast_outlook` is Sunny (Sunny also has minimal effect on underestimations)
+
+```{r}
+# Splitting into overestimation and underestimation data
+positive_data = outlier_weather %>%
+  filter(pred_error >= 0)
+
+negative_data = outlier_weather %>%
+  filter(pred_error < 0)
+
+
+# Nailing our main point
+
+temp_outlier = outlier_weather %>% 
+  mutate(estimations = ifelse(pred_error >= 0, "Over-", "Under-")) %>% 
+  mutate(estimations = as.factor(estimations))
+
+# 1. Proving high_or_low effects on estimation
+temp_outlier %>% 
+  count(high_or_low, estimations) %>% 
+  group_by(high_or_low) %>% 
+  mutate(total = sum(n), proportion = n / total) %>% 
+  #arrange(estimations) %>% 
+  dplyr::select(-n, -total)
+
+
+# 2. Proving longitude / latitude effects on estimation
+
+# Longitude: Overestimations are made when longitude is higher. In contrast, underestimations tend to happen when longitude is lower
+# Latitude: Overestimations are made when latitude is lower
+negative_data %>% 
+  summarize(lon_under = mean(lon), lat_under = mean(lat))
+
+positive_data %>% 
+  summarize(lon_over = mean(lon), lat_over = mean(lat))
+
+ggplot(positive_data, aes(x = region)) +
+  geom_bar(fill = "red", color = "black") +
+  xlab("Region") +
+  ylab("Count") +
+  ggtitle("Proving that Overestimations Come from High Longitude, Low Latitude Areas")
+
+positive_data %>% 
+  filter(region == "South") %>%
+  count(state) %>% 
+  slice_max(n = 3, order_by = n)
+
+ggplot(negative_data, aes(x = region)) +
+  geom_bar(fill = "cyan", color = "black") +
+  xlab("Region") +
+  ylab("Count") +
+  ggtitle("Proving that Underestimations Come From Low Longitude Areas")
+
+negative_data %>%
+  filter(region == "West") %>%
+  count(state) %>%
+  slice_max(n = 3, order_by = n)
+
+states_over = c("Texas", "North Carolina", "West Virginia")
+states_under = c("Alaska", "Colorado", "Wyoming")
+usa = us_map(regions = "states")
+all_states = usa %>% 
+  distinct(full) %>% 
+  pull(full)
+usa = usa %>% 
+  mutate(estimation = case_when(
+    full %in% states_over ~ "over",
+    full %in% states_under ~ "under",
+    .default = "na"
+  )) %>% 
+  group_by(abbr) %>% 
+  mutate(centroid_x = mean(x), centroid_y = mean(y)) %>% 
+  ungroup()
+
+# Convert XY coordinates to lat/lon (Adapted from https://stackoverflow.com/questions/59183384/how-to-convert-x-and-y-coordinates-into-latitude-and-longitude)
+# Convert usa data to sf object
+usa_sf = st_as_sf(usa, coords = c("x", "y"), crs = usmap_crs())
+
+# Transform CRS to EPSG:4326 (4326 is the most commonly used CRS to translate XY-coordinates to longitude/latitude degrees)
+usa_latlon = st_transform(usa_sf, crs = 4326)
+
+# Extract longitude and latitude after transformation
+usa_latlon = usa_latlon %>%
+  mutate(lon = st_coordinates(usa_latlon)[,1],
+         lat = st_coordinates(usa_latlon)[,2])
+
+# Doing the same for centroids
+centroid_usa_sf = st_as_sf(usa, coords = c("centroid_x", "centroid_y"), crs = usmap_crs())
+centroid_usa_latlon = st_transform(centroid_usa_sf, crs = 4326)
+centroid_usa_latlon = centroid_usa_latlon %>%
+  mutate(centroid_lon = st_coordinates(centroid_usa_latlon)[,1],
+         centroid_lat = st_coordinates(centroid_usa_latlon)[,2]) %>% 
+  dplyr::select(centroid_lon, centroid_lat)
+
+usa_latlon$centroid_lon = centroid_usa_latlon$centroid_lon
+usa_latlon$centroid_lat = centroid_usa_latlon$centroid_lat
+
+# TX, WV, and NC all fall within the same latitude band (30N - 40N), and they have higher longitude than the states with 
+# underestimated temperatures (said another way, AK, CO, and WY are all to the left of the top states with overestimated temperatures)
+ggplot(usa_latlon, aes(x = lon, y = lat, group = group, fill = factor(estimation))) +
+  geom_polygon(color = 'black') +
+  geom_text(aes(x = centroid_lon, y = centroid_lat, label = abbr), check_overlap = TRUE) +
+  scale_fill_manual(values = c("white", "red", "cyan"), guide = 'none') +
+  labs(
+    title = "Top US States in terms of Overestimations and Underestimations",
+    subtitle = "Blue = Underestimation    Red = Overestimation"
+  ) + 
+  theme(panel.background = element_rect(color = "BLACK", fill = "GRAY")) +
+  xlab("Longitude") +
+  ylab("Latitude")
+
+
+# 3. Proof for elevation_change_four 
+quantile(temp_outlier$elevation_change_four, probs = seq(0, 1, 0.2))
+
+over_elev_4 = temp_outlier %>%
+  group_by(estimations) %>% 
+  mutate(bin_elev_4 = case_when(
+    elevation_change_four >= 2.63 & elevation_change_four < 26.11 ~ "[2.63, 26.11)",
+    elevation_change_four >= 26.11 & elevation_change_four < 42.55 ~ "[26.11, 42.55)",
+    elevation_change_four >= 42.55 & elevation_change_four < 93.20 ~ "[42.55, 93.20)",
+    elevation_change_four >= 79.31 & elevation_change_four < 135.88 ~ "[93.20, 135.88)",
+    elevation_change_four >= 135.88 ~ "[135.88, inf)",
+  )) %>%
+  count(bin_elev_4) %>% 
+  arrange(desc(bin_elev_4)) %>%
+  mutate(classification = case_when(
+    bin_elev_4 == "[2.63, 26.11)" ~ "extremely low",
+    bin_elev_4 == "[26.11, 42.55)" ~ "low",
+    bin_elev_4 == "[42.55, 93.20)" ~ "medium",
+    bin_elev_4 == "[93.20, 135.88)" ~ "high",
+    bin_elev_4 == "[135.88, inf)" ~ "extremely high",
+  )) %>% 
+  filter(!(classification == "medium")) %>%  # Since medium values are insignificant
+  mutate(classification = 
+           fct_relevel(classification,
+                       c("extremely low", "low",
+                         "medium", "high", "extremely high"))) 
+
+# Disregarding the medium values (since they do not influence y-hat as per the PDP plot), the graph proves that weathermen tend to overestimate 
+# temperatures when elevation_change_four is lower / extremely high, and underestimate temperatures when elevation_change_four is high 
+over_elev_4%>% 
+  ggplot(aes(x = classification, y = n, fill = estimations, color = estimations)) +
+  geom_col(position = position_dodge2(preserve = "single")) +
+  scale_fill_manual(values = c("red","cyan")) +
+  scale_color_manual(values = c("black","black")) + 
+  xlab("Elevation Change Four") +
+  ylab("Count") +
+  ggtitle("Proving that Weathermen Tend to Overestimate Temperature \nwhen Elevation Change Four are Lower/Extremely High and\nUnderestimate when High")
+
+
+# 4. Proof for elevation
+quantile(temp_outlier$elevation, probs = seq(0, 1, 0.2))
+
+proof_elev = temp_outlier %>% 
+  group_by(estimations) %>% 
+  mutate(bin_elevation = case_when(
+    elevation >= 1.32 & elevation < 108.44 ~ "[1.32, 108.44)",
+    elevation >= 108.44 & elevation < 190.93 ~ "[108.44, 190.93)",
+    elevation >= 190.93 & elevation < 276.97 ~ "[190.93, 276.97)",
+    elevation >= 276.97 & elevation < 1117.24 ~ "[276.97, 1117.24)",
+    elevation >= 1117.24 ~ "[1117.24, inf)",
+  )) %>% 
+  count(bin_elevation) %>% 
+  mutate(classification = case_when(
+    bin_elevation == "[1.32, 108.44)" ~ "extremely low",
+    bin_elevation == "[108.44, 190.93)" ~ "low",
+    bin_elevation == "[190.93, 276.97)" ~ "medium",
+    bin_elevation == "[276.97, 1117.24)" ~ "high",
+    bin_elevation == "[1117.24, inf)" ~ "extremely high", 
+  )) %>% 
+  filter(!(classification %in% c("extremely low", "low"))) %>% 
+  mutate(classification = 
+           fct_relevel(classification,
+                       c("extremely low", "low",
+                         "medium", "high", "extremely high"))) 
+
+# Disregarding the extremely low-low values (since they do not influence y-hat as per the PDP plot), 
+# the graph proves that overestimations are usually made when elevation is medium-high and temperatures are usually underestimated when elevation is extremely high
+proof_elev %>% 
+  ggplot(aes(x = classification, y = n, fill = estimations, color = estimations)) +
+  geom_col(position = position_dodge2(preserve = "single")) +
+  scale_fill_manual(values = c("red","cyan")) +
+  scale_color_manual(values = c("black","black")) + 
+  xlab("Elevation") +
+  ylab("Count") +
+  ggtitle("Proving that Overestimations are Usually Made when Elevation is Medium-High \nand Underestimations when Elevation is Extremely High")
+  
+
+# 5. Proving that based on outlier data and feature importance, a lot of underestimated predictions are made in January, February, and March 
+negative_data %>% 
+  count(month) %>% 
+  ggplot(aes(x = month, y = n)) +
+  geom_col(color = "black", fill = "cyan") +
+  xlab("Month") +
+  ylab("Count") +
+  ggtitle("Proving that Weathermen Underestimates Temperature in\nJanuary, February, and March")
+
+
+# 6. Proof for wind speed
+quantile(temp_outlier$wind, probs = seq(0, 1, 0.2))
+
+higher_wind = temp_outlier %>% 
+  group_by(estimations) %>% 
+  mutate(bin_wind = case_when(
+    wind >= 2.17 & wind < 2.80 ~ "[2.17, 2.80)",
+    wind >= 2.80 & wind < 3.24 ~ "[2.80, 3.24)",
+    wind >= 3.24 & wind < 3.79 ~ "[3.24, 3.79)",
+    wind >= 3.79 & wind < 4.33 ~ "[3.79, 4.33)",
+    wind >= 4.33 ~ "[4.33, inf)",
+  )) %>% 
+  count(bin_wind) %>% 
+  mutate(classification = case_when(
+    bin_wind == "[2.17, 2.80)" ~ "extremely low",
+    bin_wind == "[2.80, 3.24)" ~ "low",
+    bin_wind == "[3.24, 3.79)" ~ "medium",
+    bin_wind == "[3.79, 4.33)" ~ "high",
+    bin_wind == "[4.33, inf)" ~ "extremely high", 
+  )) %>% 
+  filter(!(classification %in% c("low", "medium"))) %>% 
+  mutate(classification = 
+           fct_relevel(classification,
+                       c("extremely low", "low",
+                         "medium", "high", "extremely high"))) 
+
+# Disregarding the low-medium values (since they do not influence y-hat as per the PDP plot), we can see that temperature overestimations tend to happen more in
+# extremely low / higher wind speed conditions
+higher_wind %>% 
+  ggplot(aes(x = classification, y = n, fill = estimations, color = estimations)) +
+  geom_col(position = position_dodge2(preserve = "single")) +
+  scale_fill_manual(values = c("red","cyan")) +
+  scale_color_manual(values = c("black","black")) + 
+  xlab("Wind Speed") +
+  ylab("Count") +
+  ggtitle("Proving that Weathermen Overestimates Temperature \nin Extremely Low/Higher Wind Speed Conditions")
+
+```
+
+- A higher `latitude` seems to not have any significant contributions to underestimations as the line mostly hovers above yhat = 0.
+
+- The irregular influences of `elevation` / `elevation_change_four` warrant further analysis. Nonetheless, we are quite happy that we are able to identify some features to answer the question of overestimation / underestimation.
+
+---
+
+### Factors contributing to Most Accurate Predictions
+
+- We now turn our attention on answering, when do forecasters make more accurate predictions?
+
+- It is important to understand here that we want to identify the factors that make up the most accurate predictions, not just accurate. So, first we will gather only accurate data then we unearth those factors.
+
+- Before pushing on, it is important to understand which data points do we consider as accurate predictions. When analyzing the outliers, we only look at the points to the right/ left of the whiskers. We consider them to be overestimations/ underestimations. Thus, in this context, we define accurate predictions as the data points within the boxplot, inclusive of the whiskers. 
+
+```{r}
+accurate_weather = weather[which((weather$pred_error >= lower_fence) & (weather$pred_error <= upper_fence)), ]
+
+accurate_weather %>% 
+  summarize(error_mean = mean(pred_error))
+
+accurate_preds = nrow(accurate_weather) / nrow(weather)
+accurate_preds
+```
+
+- According to our definition of 'accurate', we obtain a mean of -0.453 in prediction error. Even if is not 0 on the dot, there really is not a big difference between 0 and -0.453 (especially when the temperature is measured in degrees Fahrenheit). Also, 94% of predictions are accurate.
+
+- Let's take a different but simple approach this time to find out feature importance. We will use the selectKBest algorithm to do feature selection with the absolute prediction error being our y-variable. We select the best 7 out of 14 features.
+
+- Note: We drop the `date`, `observed_temp`, `forecast_temp`, `koppen`, `avg_annual_precip`, and `observed_precip` as we did in our previous models.
+
+```{r}
+set.seed(5094)
+
+# Clean up data
+accurate_weather = accurate_weather %>% 
+  mutate(pred_error = abs(pred_error), month = lubridate::month(date, label = TRUE)) %>% 
+  dplyr::select(-date, -observed_temp, -forecast_temp, -koppen, -avg_annual_precip, -observed_precip)
+
+character_cols = names(accurate_weather)[sapply(accurate_weather, is.character)]
+accurate_weather[character_cols] = lapply(accurate_weather[character_cols], as.factor)
+
+# Finding the 7 most important features by using KBest (where k = 7) on a linear regression model
+filter_eval = wrapperEvaluator("lm")
+direct_searcher = directSearchAlgorithm("selectKBest", list(k= 7))
+results = directFeatureSelection(accurate_weather, "pred_error", direct_searcher, filter_eval)
+features_used = results$xNames
+vals = rep(0, length(features_used))
+
+for (i in 1:length(features_used)){
+  vals[i] = results$bestFeatures[[i]]
+}
+df = data.frame(features = features_used, significance = vals)
+
+ggplot(df, aes(x = features, y = significance)) +
+  geom_col(color = "black", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  xlab("Features") +
+  ylab("Significance") +
+  ggtitle("Important Features that Contribute to Accurate Predictions",
+          subtitle = "0 = Not Important\n1 = Important")
+
+results$bestFeatures
+```
+
+- We found that `city`, `state`, `region`, `high_or_low`, `forecast_outlook`, `longitude`, and `month` have some influence on making accurate temperature predictions.
+
+- **Important note**: It looks like city, state, region, and longitude might relate to each other. Nonetheless, we are relaxing correlation assumptions as we are not fitting any model. 
+
+- Now, we want to identify the factors that lead to the most accurate temperature predictions made.
+
+```{r}
+# Feature 1: month
+check_month_accurate = accurate_weather %>%
+  group_by(month) %>%
+  summarize(avg_error = mean(pred_error))
+
+# Seems like weathermen make the most accurate predictions on June, July, and August
+# How convenient! These months correspond to the Summer season
+ggplot(check_month_accurate, aes(x = month, y = avg_error)) +
+  geom_line(aes(group = 1), color = "black") +
+  geom_point(color = "purple") +
+  xlab("Month") +
+  ylab("Average (Absolute) Prediction Error") +
+  ggtitle("Average Prediction Error of Accurate Data by Month")
+
+accurate_weather = accurate_weather %>% 
+    mutate(season = case_when(
+    month %in% c("Sep", "Oct", "Nov") ~ "Fall",
+    month %in% c("Dec", "Jan", "Feb") ~ "Winter",
+    month %in% c("Mar", "Apr", "May") ~ "Spring", 
+    month %in% c("Jun", "Jul", "Aug") ~ "Summer"
+  ))
+
+accurate_weather %>% 
+  group_by(season) %>% 
+  summarize(avg_error = mean(pred_error))
+  
+
+```
+
+- We see that temperature predictions during the months of June, July, and August are the most accurate. These months, if we bin them together, are the Summer months. 
+- Check out [https://www.epa.gov/system/files/images/2022-07/seasonal-temperature_download1_2022.png] (Source: NOAA (National Oceanic and Atmospheric Administration). 2022.)
+
+- If we observe the above graph by the NOAA, we can verify that our observations are indeed correct. The Summer season has the least variable temperature, making it the time when weather forecasters make the most accurate predictions.
+
+- Let us look at other factors.
+
+```{r, fig.height = 5}
+# Feature 2: forecast_outlook
+check_forecast_out_accurate = accurate_weather %>%
+  group_by(forecast_outlook) %>%
+  summarize(avg_error = mean(pred_error))
+
+# The most accurate predictions are made when the forecast outlook is either SMOKE, BLZZRD, OR TSTRMS
+# Perhaps they have some relation to our previous feature, month / season
+ggplot(check_forecast_out_accurate) +
+  geom_col(aes(x = forecast_outlook, y = avg_error, fill = forecast_outlook), color = "black") +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(0, 3, 0.5),
+                     labels = seq(0, 3, 0.5)) +
+  geom_hline(yintercept = 1.85, linetype = "dashed") +
+  scale_fill_manual(values = c("lightblue", "purple", "lightblue", "lightblue", "lightblue", "lightblue",
+                               "lightblue", "lightblue", "lightblue", "lightblue", "lightblue", "lightblue",
+                               "lightblue", "lightblue", "lightblue", "purple", "lightblue", "lightblue",
+                               "lightblue", "purple", "lightblue", "lightblue", "lightblue"), guide = 'none') +
+  xlab("Forecast Outlook") +
+  ylab("Average (Absolute) Prediction Error") +
+  ggtitle("Average Prediction Error of Accurate Data by Forecast Outlook",
+          subtitle = "Purple = Top 3 lowest prediction error\nLight blue = Other")
+
+check_forecast_out_accurate %>% 
+  slice_min(avg_error, n =3)
+
+# Yes! These forecast outlooks mainly come from the temperature predictions for Summer
+# What we have gathered here further strengthens our argument that weather forecasters make more accurate predictions during the Summer
+accurate_weather %>% 
+  filter(forecast_outlook %in% c("SMOKE", # 341
+                                 "BLZZRD", # 28
+                                 "TSTRMS")) %>% # 9074
+  count(season)
+
+```
+
+- We can see that SMOKE, BLZZRD, and TSTRMS `forecast_outlook` contribute to more accurate predictions.
+
+- Relating this back to our analysis of month/season feature, we can firmly say that Summer is the time when weathermen make more accurate predictions. 
+
+- Let us press on.
+
+```{r}
+# Feature 3: high_or_low
+check_highlow_accurate = accurate_weather %>%
+  group_by(high_or_low) %>%
+  summarize(avg_error = mean(pred_error))
+
+# Although forecast for high temperatures are more accurate, it looks like the difference is too small
+ggplot(check_highlow_accurate) + 
+  geom_col(aes(x = high_or_low, y = avg_error), color = "black", fill = "purple") + 
+  xlab("Type of Temperature Forecast") +
+  ylab("Average (Absolute) Prediction Error") +
+  ggtitle("Average Prediction Error of Accurate Data by each\nType of Temperature Forecast")
+
+# Verify
+check_highlow_accurate %>% 
+  summarize(difference_accurate = `avg_error` - lag(`avg_error`)) %>% 
+  drop_na()
+
+temp_outlier %>% 
+  group_by(high_or_low, estimations) %>% 
+  summarize(avg_error = mean(abs(pred_error))) %>% 
+  group_by(estimations) %>% 
+  summarize(difference_outlier = abs(`avg_error` - lag(`avg_error`))) %>% 
+  drop_na()
+
+```
+
+- Regardless of the type of temperature forecast (high or low), there really is not a big difference of when the weathermen make more accurate predictions. 
+
+- If we take a look at the outlier data, the difference between high or low for over/under estimations is more apparent, especially for overestimations. 
+
+- Thus, we conclude that when the temperature prediction is accurate, the forecast being a measure of high/low temperature does not make the estimations more precise.
+
+- Now, we move onto the last set of features.
+
+```{r}
+# Feature 4: Location (city, state, region, longitude)
+
+# By state
+# We observe that temperature predictions for FL, IN, and GA are more accurate than other states 
+accurate_weather %>% 
+  group_by(state) %>% 
+  summarize(avg_error = mean(pred_error)) %>% 
+  slice_min(avg_error, n = 3)
+
+# By city
+# Geographically, the cities with the lowest average prediction error agree with our analysis of the state feature
+# Daytona Beach is in FL, Atlanta is in GA, and Detroit is in MI
+accurate_weather %>% 
+  group_by(city) %>% 
+  summarize(avg_error = mean(pred_error)) %>% 
+  slice_min(avg_error, n = 3)
+
+# By region
+# Further, we note that the temperature predictions in Southern region of the USA is the most accurate, followed by Midwest, Northeast, and finally West 
+accurate_weather %>% 
+  group_by(region) %>% 
+  summarize(avg_error = mean(pred_error))
+
+# By longitude
+# Next, we spot that locations at middle-to-high (not too extreme) longitudes have more accurate temperature predictions 
+# than the locations at higher and lower longitudes 
+
+# Binning longitudes by quartiles
+summary(accurate_weather$lon)
+
+accurate_weather %>% 
+  mutate(lon_bins = case_when(
+    lon >= -150.00 & lon < -101.72 ~ "[-150.00, -101.72)",
+    lon >= -101.72 & lon < -85.21 ~ "[-101.72, -85.21)",
+    lon >= -85.21 & lon < -80.99 ~ "[-85.21, -80.99)",
+    lon >= -80.99 & lon <= -68.01 ~ "[-80.99, -68.01]"
+  )) %>% 
+  mutate(lon_bins = as.factor(lon_bins)) %>% 
+  group_by(lon_bins) %>% 
+  summarize(avg_error = mean(pred_error)) %>% 
+  arrange(avg_error)
+
+```
+
+- We first look at the individual features, starting with `state` --> `city` --> `region` --> `longitude`.
+
+- By `state`: We observe that temperature predictions for FL, IN, and GA are more accurate than other states.
+
+- By `city`: We gather that the cities with the average prediction error agree with our analysis of the state feature. Daytona Beach is in FL, Atlanta is in GA, and Detroit is in MI.
+
+- By `region`: We note that the temperature predictions in Southern region of the USA is the most accurate, followed by Midwest, Northeast, and finally West. Notice that FL and GA is in the South region, whereas IN is in the Midwest.  
+
+- By `longitude`: We noticed that locations at middle-to-high (not too extreme) longitudes have more accurate temperature predictions than the locations at higher and lower longitudes 
+
+- There seems to be a seemingly-obvious pattern as to where weather forecasters make more accurate predictions. We are going to try to combine all the features together and map out those areas to confirm our suspicions.
+
+```{r}
+# Cumulative Location Features Analysis
+# Let us combine location features together to get a clearer picture
+# Since the usmap does not have data for individual cities, we will assign each data point to their corresponding county
+# This is to capture every feature we are comparing
+last_feature = accurate_weather %>%
+  group_by(city, state, region) %>%
+  summarize(avg_error = mean(pred_error)) %>%
+  ungroup() %>%
+  slice_min(avg_error, n = 10) %>%
+  mutate(county = case_when(
+    city == "DAYTONA_BEACH" ~ "Volusia County",
+    city == "ATLANTA" ~ "Fulton County",
+    city == "DETROIT" ~ "Wayne County",
+    city == "FORT_WAYNE" ~ "Allen County",
+    city == "CHARLESTON" ~ "Charleston County",
+    city == "GREENSBORO" ~ "Guilford County",
+    city == "DALLAS_FT_WORTH" ~ "Tarrant County",
+    city == "BROWNSVILLE" ~ "Cameron County",
+    city == "BUFFALO" ~ "Johnson County",
+    city == "FORT_SMITH" ~ "Sebastian County"
+  )) 
+
+# Data cleanup to get right combination
+relevant_counties = last_feature %>% 
+  pull(county)
+
+relevant_states = last_feature %>% 
+  pull(state)
+  
+usa_counties = us_map(regions = "counties")
+
+cleaned_data = usa_counties %>% 
+  filter((county %in% relevant_counties) & (abbr %in% relevant_states)) %>%
+  filter(!(abbr %in% c("AR", "IN") & county == "Fulton County")) %>% 
+  filter(!(abbr %in% c("GA", "NC", "IN") & county == "Wayne County")) %>%
+  filter(!(abbr %in% c("TX", "AR", "GA", "IN") & county == "Johnson County"))
+
+cleaned_data$accurate = "yes"
+
+usa_counties = usa_counties %>% 
+  left_join(cleaned_data, by = c("x", "y", "order", "hole", "piece", "group", "fips", "abbr", "full", "county")) %>% 
+  mutate(accurate = ifelse(is.na(accurate), "no", "yes"))
+
+
+# Convert XY coordinates to lat/lon (Adapted from https://stackoverflow.com/questions/59183384/how-to-convert-x-and-y-coordinates-into-latitude-and-longitude)
+# Convert usa_counties data to sf object
+usa_counties_sf = st_as_sf(usa_counties, coords = c("x", "y"), crs = usmap_crs())
+
+# Transform CRS to EPSG:4326 (4326 is the most commonly used CRS to translate XY-coordinates to longitude/latitude degrees)
+usa_counties_latlon = st_transform(usa_counties_sf, crs = 4326)
+
+# Extract longitude and latitude after transformation
+usa_counties_latlon = usa_counties_latlon %>%
+  mutate(lon = st_coordinates(usa_counties_latlon)[,1],
+         lat = st_coordinates(usa_counties_latlon)[,2])
+
+
+# The counties highlighted red represent where the most accurate temperature predictions are made
+# This confirms our prior observations: Weathermen make more accurate temperature predictions in
+# 1. Southern USA than any other region [This encompasses the city, state, and region observation] 
+# 2. Locations with middle-to-high longitude
+ggplot(usa_counties_latlon, aes(x = lon, y = lat, group = group, fill = factor(accurate))) +
+  geom_polygon(color = 'black') +
+  scale_fill_manual(values = c("lightblue","red"), guide = 'none') +
+  labs(
+    title = "Top 10 US Cities/Counties with Most Accurate Temperature Predictions",
+    subtitle = "Red = Most Accurate"
+  ) + 
+  theme(panel.background = element_rect(color = "BLACK", fill = "GRAY")) +
+  xlab("Longitude") +
+  ylab("Latitude")
+  
+```
+
+- It looks like there is a pattern! 
+
+- We can see that the Southern areas of the United States benefit from more accurate temperature predictions. 
+
+- We can also observe that the temperature predictions at middle-to-high `longitude` locations (not too low nor too high) are more accurate.
+
+- It makes sense that latitude is not an important factor here. We can see that there are cities across lower latitude and higher latitude bands that contribute to more accurate predictions.  
+
+- To combine these observations together, weathermen make more accurate predictions in South USA, at middle-to-high `longitude` locations.
+
+---
+
+### Summary
+
+- We have truly learned a lot from this analysis. Let's recap:
+  
+  - Our main purpose of carrying out this EDA is to answer two questions: 
+    1. When do weathermen make more accurate temperature predictions? 
+    2. When do they overestimate/underestimate temperature predictions?
+    
+  - We first did some preliminary visualization to better comprehend the inherent pattern. We discovered that there is a statistical significance between estimated/observed temperature. This serves as a motivation to push on with our analysis.
+  
+  - We tried answering question 2 first:
+    1. We created a logistic regression model, in which the features are filtered by our LASSO regression and bi-directional stepwise selection algorithms. We obtained an AUC of 0.676 and an accuracy score of 65.4%.  
+    2. We feel as if we can obtain better metrics than this, thus we opted to use an extreme gradient boosting classifier. We were right in doing so, as we obtained a much improved AUC of 0.75 and an accuracy of 70.2%.
+    3. Since the caret package does not have the ability to plot feature importance straight away, we have to create another xgb model using the parameters of the trained classifier above (to create a model as similar as possible). This allows us plot a graph of feature importance.
+    4. Looking only at the top 10 features, we gathered that:
+        i. Overestimations are usually made when the location is at a higher `longitude` and a lower `latitude` with medium-to-high `elevation` and extremely high or lower `elevation_change_four`; the forecast is for high temperature; and the `wind` speed is higher or extremely low.
+        ii. In contrast, underestimations are usually made when the location is at a lower `longitude` with high `elevation_change_four` and extremely high `elevation`; the forecast is for low temperature and is made on the `month` of January, February, or March; and the `forecast_outlook` is Sunny.
+  
+  - Then, we answered question 1:
+    1. We took a different approach this time. We used a select kBest algorithm based on a linear model, where k = 7. This selects the 7 best features.
+    2. The reason why we set k = 7 is because there are 14 features, and we believe looking at the best 7 features (half of 14) would help us better understand when the weathermen would make more accurate predictions.
+    3. From this, we found that:
+        i.  the Summer `season`, 
+        ii. the `forecast_outlook` being BLZZRD, TSTRMS, or SMOKE,
+        iii. and the location being in the Southern `region` with middle-to-high `longitude`
+       contribute to more accurate predictions.
+       
+  - With this, we have achieved our aim of answering those two questions. 
+  

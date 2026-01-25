@@ -1,0 +1,2123 @@
+---
+title: "Match Dynamics in Big Brothers Big Sisters Twin Cities"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# Makes sure that the required packages are properly installed; if they are not installed, R helps to install them
+# Retrieved on 10/14/23 from - https://stackoverflow.com/questions/4090169/elegant-way-to-check-for-missing-packages-and-install-them
+required_packages <- c("tidyverse", "glmnet", "tidymodels", "caret", "car", "Metrics", "MASS", "pdp", "scales", "gganimate", "gifski", "patchwork", "randomForest", "kernlab", "caretEnsemble", "vip", "gridExtra")
+new_packages <- required_packages[!(required_packages %in% installed.packages()[, "Package"])]
+if (length(new.packages)) {
+  install.packages(new_packages)
+}
+
+library(tidyverse)
+library(glmnet)
+library(tidymodels)
+library(Metrics)
+library(car)
+library(caret)
+library(MASS)
+library(pdp)
+library(usmap)
+library(scales)
+library(patchwork)
+library(gganimate)
+library(gifski)
+library(kernlab)
+library(caretEnsemble)
+library(vip)
+library(gridExtra)
+library(readxl)
+library(svglite)
+library(wordcloud)
+library(tidytext)
+library(RColorBrewer)
+library(tidymodels)
+library(sentimentr)
+
+my_theme <- theme_minimal() +
+  theme(
+    axis.text = element_text(size = 14, color = "black"),
+    axis.title = element_text(size = 16, color = "black", face = "plain"),
+    title = element_text(size = 16, color = "black", face = "bold"),
+    legend.text = element_text(size = 14, color = "black"),
+    legend.title = element_text(
+      color = "black",
+      size = 14, margin =
+        ggplot2::margin(t = 0, r = 20, b = 0, l = 0, unit = "pt")
+    ),
+    strip.text = element_text(size = 16, color = "black"),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    panel.background = element_blank(),
+    legend.position = "bottom",
+    panel.spacing = unit(15, "pt"),
+    axis.line = element_line(colour = "black"),
+    panel.grid = element_line(color = "#f3f6f4")
+  )
+
+theme_set(my_theme)
+
+
+options(warn = -1)
+```
+
+
+```{r read-data, echo = FALSE}
+
+# Get column names for each dataset
+names_train <- names(read_excel("Training-Restated.xlsx"))
+names_test <- names(read_excel("Test-Truncated-Restated.xlsx"))
+
+ct_train <- ifelse(grepl("^Little Contact: Interest Finder", names_train) | grepl("^Big Contact: Interest Finder", names_train)
+             | names_train == "Big Contact: Volunteer Availability" | names_train == "Big Contact: Preferred Communication Type"
+             | names_train == "Big Contact: Former Big/Little" | names_train == "Little Contact: Language(s) Spoken"
+             | names_train == "Big Open to Cross-Gender Match", "text", 
+             ifelse(names_train == "Little RTBM Date in MF", "date", "guess"))
+             
+ct_test <- ifelse(grepl("^Little Contact: Interest Finder", names_test) | grepl("^Big Contact: Interest Finder", names_test)
+             | names_test == "Big Contact: Volunteer Availability" | names_test == "Big Contact: Preferred Communication Type"
+             | names_test == "Big Contact: Former Big/Little" | names_test == "Little Contact: Language(s) Spoken"
+             | names_test == "Big Open to Cross-Gender Match" | names_test == "Little Other Interests" , "text", 
+             ifelse(names_test == "Little RTBM Date in MF" |
+                    names_test == "Little Interview Date" |
+                    names_test == "Little Acceptance Date", "date", "guess"))
+
+
+bbbs_train <- read_excel("Training-Restated.xlsx",
+                         col_types = ct_train)
+
+bbbs_test <- read_excel("Test-Truncated-Restated.xlsx",
+                        col_types = ct_test)
+
+```
+
+
+### Questions to Answer
+
+- Understand and analyze the response variable distributions
+
+- How do the response variable distributions vary across Program Type?
+
+- Have the response variable distributions changed over time?
+
+- What influence do the various Big and/or Little demographic variables have on the response variable distributions?
+
+- What influence does the alignment of the demographic and/or interest variables (e.g. same gender, similar Hobbies, etc) have on the response variable distributions?
+
+- A successful match is 1) a match that remains active, 2) a match that lasts a long time, 3) a match that closes due to the age of Little, or 4) Successful Match Closure for the Closure Reason. Provide insights for Big Brothers Big Sisters Twin Cities into what factors tend to lead to a successful (or unsuccessful) match
+
+
+---
+
+### Novice Part 
+
+#### Part 1
+
+```{r, fig.width = 9, fig.height = 5}
+# Distribution of Match Length
+trunc_train <- unique(bbbs_train[ , c("Match ID 18Char", "Stage", "Match Activation Date", 
+                                      "Program Type", "Closure Reason", "Match Length")])
+
+avg_match_length <- mean(trunc_train$`Match Length`)
+median_match_length <- median(trunc_train$`Match Length`)
+sd_match_length <- sd(trunc_train$`Match Length`)
+above_year <- trunc_train %>% 
+  summarize(prop = 100 - round(sum(`Match Length` < 12) / n() * 100, 1))
+
+p <- list()
+
+p[[1]] <- trunc_train %>% 
+  ggplot(aes(x = `Match Length`)) +
+  geom_histogram(bins = 25, color = "black", fill = "orangered2", alpha = 0.7, boundary = 0) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "",
+       x = "Match Length (months)",
+       title = "") +
+  scale_x_continuous(expand = c(0, 0, 0, 0.1)) +
+  scale_y_continuous(expand = c(0, 0.2, 0.05, 0.5)) +
+  geom_vline(xintercept = avg_match_length, color = "black", alpha = 0.9, linetype = "dashed") +
+  annotate("segment", x = 32, y = 350, xend = 25, yend = 310,
+         arrow = arrow(type = "closed", length = unit(0.02, "npc"))) +
+  annotate("text", x = 35, y = 370, label = paste0("Mean = ", round(avg_match_length, 1), " months")) +
+  annotate("label", x = 80, y = 450, label = paste0("Fact: ", above_year, "% of matches last\n at least one year"))
+  
+p[[1]]
+
+ggsave("overall_match_length_distrib.svg")
+
+```
+
+```{r}
+library(survival)
+library(survminer)
+
+# Suppose df has columns: Match_Length (time in months) and status (1 if match closed, 0 if still active)
+surv_obj <- Surv(time = trunc_train$`Match Length`, event = ifelse(trunc_train$Stage == "Closed", 1, 0))
+fit <- survfit(surv_obj ~ 1, data = trunc_train)
+
+ggsurvplot(fit, data = trunc_train, 
+           font.main = c(16, "bold", "black"),
+           xlab = "Match Length (months)",
+           ylab = "Survival Probability",
+           title = "Overall Survival Analysis of Matches",
+           conf.int = TRUE) 
+
+```
+
+
+#### Part 2
+
+```{r, fig.width = 9, fig.height = 5}
+# Distribution of Closure Reason
+trunc_train_closure_gen <- trunc_train %>% 
+  drop_na(`Closure Reason`) %>% 
+  mutate(trunc_reason = case_when(
+    grepl("^Volunteer", `Closure Reason`) ~ "Volunteer Issues",
+    grepl("^Child", `Closure Reason`) ~ "Child Issues",
+    grepl("^Agency", `Closure Reason`) ~ "Agency Issues",
+    grepl("^COVID", `Closure Reason`) ~ "COVID",
+    grepl("^Successful", `Closure Reason`) ~ "Successful Closure",
+    grepl("^Changing", `Closure Reason`) ~ "Match Type Change",
+    .default = `Closure Reason`
+  )) %>% 
+  mutate(trunc_reason = factor(trunc_reason, levels = rev(c("Volunteer Issues", "Child Issues", "COVID",
+                                                        "Successful Closure", "Agency Issues",
+                                                        "Match Type Change")))) %>% 
+  filter(trunc_reason != "Match Type Change")
+
+p[[2]] <- trunc_train_closure_gen %>% 
+  ggplot(aes(y = trunc_reason)) +
+  geom_bar(aes(fill = trunc_reason), show.legend = F, alpha = 0.8, color = "black") +
+  theme(axis.text.y = element_text(size = 12, hjust = 1),
+        legend.text = element_blank()) +
+  labs(y = "Reason",
+       x = "",
+       title = "Closure Reason") +
+  scale_x_continuous(expand = c(0, 0, 0, 0.1)) +
+  scale_fill_manual(values = c(
+    "purple3", "springgreen4", "#b5b3b3", "#C5050C",
+    "deepskyblue4"
+  )) +
+  theme(panel.grid.major.y = element_blank())
+
+p[[2]]
+
+ggsave("cr1.svg")
+
+
+```
+
+
+```{r, fig.width = 9, fig.height = 5}
+
+closure_type <- function(df, closure_type){
+  df <- df %>% 
+    drop_na(`Closure Reason`) %>%
+    filter(trunc_reason == closure_type) %>% 
+    mutate(trunc_reason = case_when(
+    grepl("Feels incompatible", `Closure Reason`) ~ "Incompatibility",
+    grepl("Lost contact", `Closure Reason`) ~ "Lost Contact",
+    grepl("COVID", `Closure Reason`) ~ "COVID",
+    grepl("Unrealistic", `Closure Reason`) ~ "Unrealistic Expectations",
+    grepl("Time constraint", `Closure Reason`) ~ "Time Constraint",
+    grepl("Infraction", `Closure Reason`) ~ "Policy Violation",
+    grepl("Concern with Volunteer", `Closure Reason`) ~ "Child Safety",
+    grepl("Lost interest", `Closure Reason`) ~ "Lost Interest",
+    grepl("Moved", `Closure Reason`) ~ "Moved (Within/Out of Area)",
+    grepl("program", `Closure Reason`) ~ "Program Challenges",
+    grepl("partnership", `Closure Reason`) ~ "Changed Partnership",
+    grepl("Health", `Closure Reason`) | grepl("Deceased", `Closure Reason`)  ~ "Health-related",
+    grepl("[Cc]hanged", `Closure Reason`) ~ "Environment Change",
+    grepl("Graduated", `Closure Reason`) ~ "Graduated",
+    grepl("Severity", `Closure Reason`) ~ "Adversity",
+    .default = `Closure Reason`
+  ))
+  
+  return(df)
+}
+
+
+# Closure Reason -> Volunteer Issue 
+trunc_train_closure_volunteer <- closure_type(trunc_train_closure_gen, "Volunteer Issues") %>%
+  mutate(trunc_reason = factor(trunc_reason, levels = rev(c("Time Constraint", "Moved (Within/Out of Area)", 
+                                                            "Lost Contact", "Incompatibility", "Changed Partnership",
+                                                            "Health-related", "Unrealistic Expectations",
+                                                            "Policy Violation"))))
+  
+p[[3]] <- trunc_train_closure_volunteer %>% 
+  ggplot(aes(y = trunc_reason)) +
+  geom_bar(fill = "deepskyblue4", alpha = 0.8, color = "black") +
+  theme(axis.text.y = element_text(size = 12, hjust = 1),
+        legend.text = element_blank()) +
+  labs(y = "Issue",
+       x = "",
+       title = "Breakdown: Volunteer Issues") +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.y = element_blank())
+
+p[[3]]
+
+ggsave("cr2.svg")
+
+```
+
+```{r, fig.width = 9, fig.height = 5}
+# Closure Reason -> Child Issue 
+trunc_train_closure_child <- closure_type(trunc_train_closure_gen, "Child Issues") %>%
+  mutate(trunc_reason = factor(trunc_reason, levels = rev(c("Lost Contact", "Environment Change",
+                                                            "Moved (Within/Out of Area)",
+                                                            "Lost Interest", "Graduated",
+                                                            "Incompatibility", "Time Constraint", 
+                                                            "Unrealistic Expectations", "Adversity",
+                                                            "Policy Violation"))))
+  
+p[[4]] <- trunc_train_closure_child %>% 
+  ggplot(aes(y = trunc_reason)) +
+  geom_bar(fill = "#C5050C", alpha = 0.8, color = "black") +
+  theme(axis.text.y = element_text(size = 12, hjust = 1),
+        legend.text = element_blank()) +
+  labs(y = "Issue",
+       x = "",
+       title = "Breakdown: Child Issues") +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.y = element_blank())
+
+p[[4]]
+
+ggsave("cr3.svg")
+
+```
+
+```{r, fig.width = 9, fig.height = 5}
+# Closure Reason -> Agency Issue 
+trunc_train_closure_agency <- closure_type(trunc_train_closure_gen, "Agency Issues") %>%
+  mutate(trunc_reason = factor(trunc_reason, levels = rev(c("Program Challenges", "Child Safety"))))
+  
+p[[5]] <- trunc_train_closure_agency %>% 
+  ggplot(aes(y = trunc_reason)) +
+  geom_bar(fill = "purple3", alpha = 0.8, color = "black") +
+  theme(axis.text.y = element_text(size = 12, hjust = 1),
+        legend.text = element_blank()) +
+  labs(y = "Issue",
+       x = "",
+       title = "Breakdown: Agency Issues") +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.y = element_blank())
+
+p[[5]]
+
+
+ggsave("cr4.svg")
+
+```
+
+#### Part 3
+
+- How do the response variable distributions vary across Program Type? 
+
+```{r, fig.width = 15, fig.height = 5}
+# Distribution of match length by program type
+p_q2 <- list()
+
+p_q2[[1]] <- trunc_train %>% 
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Plus", "Site", `Program Type`)) %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Facilitated", "Site", `Program Type`)) %>% 
+  ggplot(aes(x = `Program Type`)) +
+  geom_bar(color = "black", fill = "#f28e2b", alpha = 0.9) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "", title = "Frequency Distribution")
+
+summary_pt_ml <- trunc_train %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Plus", "Site", `Program Type`)) %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Facilitated", "Site", `Program Type`)) %>% 
+  group_by(`Program Type`) %>% 
+  summarize(mean_length = mean(`Match Length`))
+
+
+p_q2[[2]] <- trunc_train %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Plus", "Site", `Program Type`)) %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Facilitated", "Site", `Program Type`)) %>% 
+  ggplot(aes(x = `Program Type`, y = `Match Length`)) +
+  geom_boxplot(width = 0.7, alpha = 0.9, fill = "#f28e2b") +
+  labs(title = "Match Length Distribution") +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  annotate("label", x = 2.2, y = 88, label = paste0("Mean match length (months):\nCommunity: ", round(summary_pt_ml[1,2]$mean_length, 1),
+                                                     "\nSite: ", round(summary_pt_ml[2,2]$mean_length, 1)))
+
+p_q2[[1]] + p_q2[[2]]
+ggsave("pt.svg")
+  
+```
+
+- Have the response variable distributions changed over time?
+
+```{r, fig.width = 15, fig.height = 5}
+p_q2[[3]] <- trunc_train %>% 
+  mutate(start_date = year(`Match Activation Date`)) %>% 
+  count(start_date) %>% 
+  ggplot(aes(x = start_date, y = n)) +
+  geom_point(color = "#ac0175", alpha = 0.9) +
+  geom_line(color = "#ac0175", alpha = 0.9) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "", x = "Activation Year", title = "Number of Matches per Year")
+
+summary_year_ml <- trunc_train %>%
+  mutate(start_date = as.factor(year(`Match Activation Date`))) %>% 
+  group_by(start_date) %>% 
+  summarize(mean_length = round(mean(`Match Length`), 1))
+
+p_q2[[4]] <- trunc_train %>% 
+  mutate(start_date = as.factor(year(`Match Activation Date`))) %>% 
+  ggplot(aes(x = start_date, y = `Match Length`)) +
+  geom_boxplot(fill = "#ac0175", alpha = 0.9) +
+  labs(x = "Activation Year", title = "Match Length Distribution - Year") +
+  theme(panel.grid.major.x = element_blank()) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  annotate("label", x = 6, y = 88, label = paste0("Mean match length (months):\n2017: ", round(summary_year_ml[1,2]$mean_length, 1),
+                                                     "        2018: ", round(summary_year_ml[2,2]$mean_length, 1),
+                                                    "        2019: ", round(summary_year_ml[3,2]$mean_length, 1),
+                                                    "        2020: ", round(summary_year_ml[4,2]$mean_length, 1),
+                                                    "\n2021: ", round(summary_year_ml[5,2]$mean_length, 1),
+                                                    "        2022: ", round(summary_year_ml[6,2]$mean_length, 1),
+                                                     "        2023: ", round(summary_year_ml[7,2]$mean_length, 1),
+                                                     "        2024:   ", round(summary_year_ml[8,2]$mean_length, 1)))
+
+
+
+p_q2[[3]] + p_q2[[4]]
+ggsave("time.svg")
+```
+
+```{r}
+trunc_train_year <- trunc_train %>%
+  mutate(start_date = as.factor(year(`Match Activation Date`)))
+
+trunc_train_year %>% 
+  group_by(start_date) %>% 
+  mutate(n = n()) %>% 
+  filter(Stage == "Active") %>% 
+  mutate(active = n()) %>% 
+  distinct(start_date, n, active) %>% 
+  arrange(start_date) %>% 
+  rename(`Match Start` = start_date,
+         `Total Matches` = n,
+         `Active Matches` = active) %>% 
+  mutate(`Proportion, Active Matches` = round(`Active Matches` / `Total Matches`, 2))
+
+# ANOVA test - year
+trunc_train_year_filtered <- trunc_train_year %>% 
+  filter(!(start_date %in% c("2023", "2024")))
+
+anova_year <- aov(`Match Length` ~ start_date, data = trunc_train_year_filtered)
+summary(anova_year)
+
+# Finding: Match Length in 2022 is significantly shorter than other years
+TukeyHSD(anova_year)
+```
+
+```{r}
+trunc_train_pt <- trunc_train %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Plus", "Site", `Program Type`)) %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Facilitated", "Site", `Program Type`)) %>% 
+  rename(program_type = `Program Type`)
+
+
+# ANOVA test - program type
+anova_pt <- aov(`Match Length` ~ program_type, data = trunc_train_pt)
+summary(anova_pt)
+
+# Finding: Match Length for site-based programs is significantly shorter than other community-based
+TukeyHSD(anova_pt)
+
+```
+
+
+#### Part 4
+
+- What influence do the various Big and/or Little demographic variables (sex, age, race) have on the response variable distributions?
+
+- What influence does the alignment of the demographic and/or interest variables (e.g. same gender, similar Hobbies, etc) have on the response variable distributions?
+
+```{r, fig.width = 9, fig.height = 5}
+p_q3 <- list()
+
+trunc_train <- unique(bbbs_train[ , c("Match ID 18Char", "Match Length", "Rationale for Match", 
+                                      "Program Type", "Big Age", "Little Birthdate", "Big Occupation", 
+                                      "Big Level of Education", "Big Gender", "Little Gender",
+                                      "Big Race/Ethnicity", "Little Participant: Race/Ethnicity", "Big Contact: Marital Status",
+                                      "Big Contact: Interest Finder - Hobbies", "Little Contact: Interest Finder - Hobbies",
+                                      "Big Contact: Interest Finder - Sports", "Little Contact: Interest Finder - Sports", 
+                                      "Big Contact: Interest Finder - Places To Go", "Little Contact: Interest Finder - Places To Go", 
+                                      "Big Contact: Interest Finder - Entertainment", "Little Contact: Interest Finder - Entertainment",
+                                      "Big Contact: Former Big/Little", "Big Languages", "Little Contact: Language(s) Spoken",
+                                      "Little Contact: Interest Finder - Career", "Little Contact: Interest Finder - Personality", 
+                                      "Little Contact: Interest Finder - Three Wishes", 
+"Little Contact: Interest Finder - Other Interests", "Little Contact: Interest Finder - Arts")]) %>% 
+  mutate(`Little Age` = floor(time_length(interval(as.Date(`Little Birthdate`), Sys.Date()), "years"))) %>% 
+  mutate(`Age Difference` = `Big Age` - `Little Age`) %>% 
+  mutate(`Age Difference` = case_when(
+    `Age Difference` <= 5 ~ "5 or younger",
+    `Age Difference` > 5 & `Age Difference` <= 10 ~ "6-10",
+    `Age Difference` > 10 & `Age Difference` <= 15 ~ "11-15",
+    `Age Difference` > 15 & `Age Difference` <= 20 ~ "16-20",
+    `Age Difference` > 20 & `Age Difference` <= 25 ~ "21-25",
+    `Age Difference` > 25 ~ "25 or older"
+  )) %>% 
+  mutate(`Age Difference` = factor(`Age Difference`, 
+                                   levels = c("5 or younger", "6-10",
+                                              "11-15", "16-20", "21-25",
+                                              "25 or older"))) %>% 
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Plus", "Site", `Program Type`)) %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Facilitated", "Site", `Program Type`))
+
+# Age Difference
+p_q3[[1]] <- trunc_train %>% 
+  ggplot(aes(x = `Age Difference`, y = `Match Length`)) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Age Difference (years)",
+       title = "Does Age Difference Impact Match Length?")
+
+# Gender
+trunc_train_gender <- trunc_train %>% 
+  drop_na(`Big Gender`) %>% 
+  drop_na(`Little Gender`) %>% 
+  filter(`Big Gender` != "Prefer not to say") %>% 
+  mutate(across(contains("Gender"), ~ case_when(
+    . %in% c("Male") ~ "Male",
+    . %in% c("Female") ~ "Female",
+    TRUE ~ "Gender Diverse"
+  ))) %>% 
+  mutate(`Same Gender` = factor(case_when(
+    `Big Gender` == `Little Gender` ~ "Same",
+    `Big Gender` != `Little Gender` ~ "Different"), levels = c("Same", "Different"))) 
+
+
+p_q3[[2]] <- trunc_train_gender %>% 
+  ggplot(aes(x = `Same Gender`, y = `Match Length`)) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Gender Alignment",
+       title = "Does Gender Alignment Impact Match Length?")
+  
+# Race
+check_alignment <- function(big, little) {
+  
+  big_vec <- str_split(str_remove(big, ";$"), ";")[[1]] %>% str_trim()
+  little_vec <- str_split(str_remove(little, ";$"), ";")[[1]] %>% str_trim()
+  
+  # Check if there's any intersection between the two vectors
+  if (length(intersect(big_vec, little_vec)) > 0) {
+    "Same"
+  } else {
+    "Different"
+  }
+}
+
+trunc_train_race <- trunc_train %>% 
+  drop_na(`Big Race/Ethnicity`) %>% 
+  drop_na(`Little Participant: Race/Ethnicity`) %>% 
+  filter(`Big Race/Ethnicity` != "Prefer not to say;") %>%
+  filter(`Little Participant: Race/Ethnicity` != "Prefer not to say") %>% 
+  mutate(`Big Race/Ethnicity` = str_remove(`Big Race/Ethnicity`, ";$"),
+         `Little Participant: Race/Ethnicity` = str_remove(`Little Participant: Race/Ethnicity`, ";$")) %>% 
+  mutate(`Same Race` = mapply(check_alignment, `Big Race/Ethnicity`, `Little Participant: Race/Ethnicity`)) %>% 
+  mutate(`Same Race` = factor(`Same Race`, levels = c("Same", "Different"))) 
+
+
+p_q3[[3]] <- trunc_train_race %>% 
+  ggplot(aes(x = `Same Race`, y = `Match Length`)) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Race/Ethnicity Alignment",
+       title = "Does Race/Ethnicity Alignment Impact Match Length?")
+
+p_q3[[1]]
+ggsave("age.svg")
+
+p_q3[[2]]
+ggsave("gender.svg")
+
+p_q3[[3]]
+ggsave("race.svg")
+
+trunc_train_race %>% 
+  count(`Same Race`)
+```
+
+
+```{r, fig.width = 11, fig.height = 5}
+# Education
+trunc_train_edu <- trunc_train %>% 
+  drop_na(`Big Level of Education`) %>% 
+  mutate(education_level = case_when(
+    `Big Level of Education` %in% c("Some High School", "High School Graduate") ~ "High School or Less",
+    `Big Level of Education` %in% c("Some College", "Associate Degree", "Bachelors Degree") ~ "Undergraduate",
+    `Big Level of Education` %in% c("Masters Degree", "Doctor of Medicine (MD)", "Juris Doctorate (JD)", "PHD") ~ "Graduate"
+  )) %>% 
+  mutate(education_level = factor(education_level, levels = c("High School or Less",
+                                                              "Undergraduate",
+                                                              "Graduate")))
+
+
+p_q3[[4]] <- trunc_train_edu %>% 
+  ggplot(aes(x = education_level, y = `Match Length`)) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Education Level",
+       title = "Does Big's Education Level Impact Match Length?")
+
+
+# Marital Status
+trunc_train_rship <- trunc_train %>% 
+  drop_na(`Big Contact: Marital Status`) %>% 
+  mutate(relationship_status = case_when(
+    `Big Contact: Marital Status` %in% c("Married", "Domestic Partner", "Living w/ Significant Other") ~ "Partnered",
+    `Big Contact: Marital Status` %in% c("Divorced", "Separated", "Widowed") ~ "Previously Partnered",
+    `Big Contact: Marital Status` == "Single" ~ "Single",
+    TRUE ~ "Other"
+  )) %>% 
+  filter(relationship_status != "Other")
+
+p_q3[[5]] <- trunc_train_rship %>% 
+  ggplot(aes(x = relationship_status, y = `Match Length`)) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Marital Status",
+       title = "Does Big's Marital Status Impact Match Length?")
+
+
+# Occupation
+trunc_train_occ <- trunc_train %>% 
+  drop_na(`Big Occupation`) %>% 
+  mutate(`Big Occupation` = case_when(
+    `Big Occupation` %in% c("Unemployed", "Unknown", "Homemaker", "Disabled", "Student", "Retired") ~ "Unemployed/Other",
+    TRUE ~ "Employed"
+  ))
+
+p_q3[[6]] <- trunc_train_occ %>% 
+  ggplot(aes(y = `Match Length`, x = reorder(`Big Occupation`, `Match Length`, mean))) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Employment Status",
+       title = "Does Big's Employment Status Impact Match Length?")
+
+
+# Prior experience
+trunc_train_former <- trunc_train %>% 
+  mutate(past_exp = ifelse(is.na(`Big Contact: Former Big/Little`), "No experience", "Former Big/Little"))
+
+p_q3[[7]] <- trunc_train_former %>% 
+  ggplot(aes(y = `Match Length`, x = past_exp)) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Prior Experience",
+       title = "Does Big's Prior Experience Impact Match Length?")
+
+
+p_q3[[4]]
+ggsave("edu.svg")
+
+p_q3[[5]]
+ggsave("marry.svg")
+
+p_q3[[6]]
+ggsave("employment.svg")
+
+
+p_q3[[7]]
+ggsave("prior_exp.svg")
+```
+
+
+```{r, fig.width = 9, fig.height = 5}
+# Language
+language_alignment <- function(big, little) {
+  
+  if (str_to_lower(big) == "no preference") {
+    return("Same")
+  }
+  
+  big_vec <- str_split(str_remove(big, ";$"), ";")[[1]] %>% str_trim()
+  little_vec <- str_split(str_remove(little, ";$"), ";")[[1]] %>% str_trim()
+  
+  # Check if there's any intersection between the two vectors
+  if (length(intersect(big_vec, little_vec)) > 0) {
+    "Same"
+  } else {
+    "Different"
+  }
+}
+
+trunc_train_lang <- trunc_train %>% 
+  mutate(`Big Languages` = ifelse(is.na(`Big Languages`), "English", `Big Languages`),
+         `Little Contact: Language(s) Spoken` = ifelse(is.na(`Little Contact: Language(s) Spoken`), "English", `Little Contact: Language(s) Spoken`)) %>% 
+  mutate(Language_Alignment = mapply(language_alignment, `Big Languages`, `Little Contact: Language(s) Spoken`)) %>% 
+  mutate(Language_Alignment = factor(Language_Alignment, levels = c("Same", "Different")))
+
+
+p_q3[[7]] <- trunc_train_lang %>% 
+  ggplot(aes(x = Language_Alignment, y = `Match Length`)) +
+  geom_boxplot(color = "black", fill = "#211d70", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Language Alignment",
+       title = "Does Language Spoken Impact Match Length?")
+
+p_q3[[7]]
+
+```
+
+
+
+```{r, fig.width = 9, fig.height = 5}
+trunc_train %>% 
+  filter(!is.na(`Big Contact: Interest Finder - Places To Go`) & !is.na(`Little Contact: Interest Finder - Places To Go`)) 
+
+na_count <-sapply(trunc_train, function(y) sum(length(which(is.na(y)))))
+na_count <- data.frame(na_count)
+na_count
+```
+
+
+```{r}
+# Alignment
+TukeyHSD(aov(`Match Length` ~ race_align, trunc_train_race %>%  rename(race_align = `Same Race`)))
+TukeyHSD(aov(`Match Length` ~ gender_align, trunc_train_gender %>%  rename(gender_align = `Same Gender`)))
+TukeyHSD(aov(`Match Length` ~ Language_Alignment, trunc_train_lang))
+
+
+# Demographic
+TukeyHSD(aov(`Match Length` ~ age_diff, trunc_train %>%  rename(age_diff = `Age Difference`)))
+summary(aov(`Match Length` ~ education_level, trunc_train_edu))
+summary(aov(`Match Length` ~ relationship_status, trunc_train_rship))
+summary(aov(`Match Length` ~ occ, trunc_train_occ %>%  rename(occ = `Big Occupation`)))
+summary(aov(`Match Length` ~ past_exp, trunc_train_former))
+```
+
+```{r, fig.width = 9, fig.height = 5}
+# Interests
+
+p_q4 <- list()
+
+bigrams <- trunc_train %>%
+  drop_na(`Rationale for Match`) %>% 
+  dplyr::select(`Match ID 18Char`, `Rationale for Match`, `Match Length`) %>% 
+  mutate(`Rationale for Match` = str_replace_all(
+    `Rationale for Match`,
+    c("B_first_name" = "Big", "L_first_name" = "Little", "B_last_name" = "Big", "L_last_name" = "Little",
+      "BS" = "Big", "BB" = "Big", "LS" = "Little", "LB" = "Little")
+  )) %>% 
+  arrange(-`Match Length`) %>% 
+  mutate(`Rationale for Match` = str_to_lower(`Rationale for Match`)) %>% 
+  unnest_tokens(bigram, `Rationale for Match`, token = "ngrams", n = 2) %>% 
+  separate(bigram, into = c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% c(stop_words$word, "shared", "distance", "miles", "big", "big's", "traits", "trait",
+                       "little", "little's", "1", "2", "3", "4", "5", "6", "7", "8", "9", "additional", 
+                       "mc", "emc", "match", "NA", "mom's", "mom", "PG", "wide", "mins", "min"),
+         !word2 %in% c(stop_words$word, "shared", "distance", "miles", "big", "big's", "additional", "traits", "trait",
+                       "little", "little's", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+                       "mc", "emc", "match", "NA", "mom's", "mom", "PG", "wide", "mins", "min")) %>%
+  unite(bigram, word1, word2, sep = " ") %>% 
+  filter(!(bigram %in% c("potential challenges", "child experience", "NA NA", "share similar", "similar personalities")))
+
+bigram_counts <- bigrams %>% 
+  count(bigram, sort = T) %>% 
+  filter(!(bigram %in% c("talkative outgoing", "potential challenges",
+                         "child experience", "NA NA", "enjoy sports", "sporting events",
+                         "spending time", "healthy relationship", "outdoors parks", "paired based", "enjoy arts",
+                         "mental health", "st paul")))
+
+
+
+colors_wc <- c("#ac0175", "#009686", "#009686", "deepskyblue4", "orangered2", "orangered2",
+               "deepskyblue4", "orangered2", "#009686", "orangered2", "#009686", "#b5b3b3", "#009686", "deepskyblue4",
+               "orangered2", "#009686", "deepskyblue4", "deepskyblue4", "orangered2", "deepskyblue4",
+               "orangered2", "orangered2", "#b5b3b3", "deepskyblue4", "deepskyblue4", "orangered2", 
+               "orangered2", "#ac0175", "orangered2", "#009686", "#ac0175", "orangered2", "#ac0175",
+               "orangered2", "orangered2", "#009686", "deepskyblue4", "orangered2", "orangered2",
+               "orangered2", "orangered2", "orangered2", "#009686", "orangered2", "#009686", "#009686",
+               "orangered2", "orangered2", "#009686", "orangered2")
+               
+  
+top_10_interest <- bigram_counts$bigram[1:10]
+
+p_q4[[1]] <- bigrams %>% 
+  filter(bigram %in% c(top_10_interest)) %>% 
+  group_by(bigram) %>% 
+  summarize(mean_length = mean(`Match Length`)) %>% 
+  mutate(bigram = case_when(
+    bigram == "arts crafts" ~ "Arts/Crafts",
+    bigram == "bike riding" ~ "Bike Riding",
+    bigram == "board games" ~ "Board Games",
+    bigram == "video games" ~ "Video Games",
+    bigram == "friendly curious" ~ "Friendly and Curious",
+    bigram == "friendly talkative" ~ "Friendly and Talkative",
+    bigram == "outdoor activities" ~ "Outdoor Activities",
+    bigram == "outgoing talkative" ~ "Outgoing and Talkative",
+    bigram == "talkative curious" ~ "Talkative Curious",
+    bigram == "hair nails" ~ "Hair/Nails"
+  )) %>% 
+  ggplot(aes(x = mean_length, y = reorder(bigram, mean_length))) +
+  geom_col(fill = "#211d70", color = "black", alpha = 0.8) +
+  theme(axis.text.y = element_text(size = 12, hjust = 1),
+        legend.text = element_blank()) +
+  labs(y = "",
+       x = "Mean Match Length (months)",
+       title = "Top 10 Shared Interest/Personality and\nAverage Match Length") +
+  scale_x_continuous(expand = c(0, 0, 0, 0.1)) +
+  theme(panel.grid.major.y = element_blank())
+
+wordcloud(words = bigram_counts$bigram, 
+          freq = bigram_counts$n, 
+          max.words = 50, 
+          random.order = FALSE, 
+          rot.per = 0.1,
+          colors = colors_wc)
+
+ggsave("wc.svg")
+
+p_q4[[1]]
+ggsave("top10_interests.svg")
+
+```
+
+```{r, fig.width = 9, fig.height = 5}
+get_interests <- function(df, col) {
+  df %>% 
+    drop_na({{col}}) %>% 
+    dplyr::select({{col}}) %>% 
+    mutate({{col}} := {{col}} %>% 
+             str_replace_all("/", "; ") %>%    # Replace "/" with "; "
+             str_to_lower() %>% 
+             str_split(";") %>% 
+             map(~ unique(str_trim(.x)))) %>% 
+    unnest({{col}}) %>% 
+    distinct({{col}}) %>% 
+    arrange({{col}}) %>% 
+    filter(!({{col}} %in% c("none", "other"))) %>% 
+    pull({{col}})
+}
+
+sports_b <- get_interests(trunc_train, `Big Contact: Interest Finder - Sports`)
+places_b <- get_interests(trunc_train, `Big Contact: Interest Finder - Places To Go`)
+entertainment_b <- get_interests(trunc_train, `Big Contact: Interest Finder - Entertainment`)
+hobbies_b <- get_interests(trunc_train, `Big Contact: Interest Finder - Hobbies`)
+
+hobbies_b[1] = "astronomy"
+hobbies_b[4] = "pokémon"
+
+sports_l <- get_interests(trunc_train, `Little Contact: Interest Finder - Sports`)
+places_l <- get_interests(trunc_train, `Little Contact: Interest Finder - Places To Go`)
+entertainment_l <- get_interests(trunc_train, `Little Contact: Interest Finder - Entertainment`)
+hobbies_l <- get_interests(trunc_train, `Little Contact: Interest Finder - Hobbies`)
+personality_l <- get_interests(trunc_train, `Little Contact: Interest Finder - Personality`)
+arts_l <- get_interests(trunc_train, `Little Contact: Interest Finder - Arts`)
+
+hobbies_l[1] = "astronomy"
+hobbies_l[4] = "pokémon"
+
+interest_keywords <- c("sports", "outdoors", "outdoor", "active", "art", "arts", "craft", "crafts", "pokemon", sports_b,
+                       sports_l, places_b, places_l, entertainment_b, entertainment_l, "listeners", "laid-back", "science fiction",
+                       "laid back", "being outside", "being active", "learning", "energetic", "sports outdoors", "new things", "reading", "love music", "exploring", "videogames", "stem", "math", hobbies_b, hobbies_l, personality_l, arts_l) %>% 
+  unique()
+
+
+pattern <- paste(interest_keywords, collapse = "|")
+
+# Filter bigrams that contain at least one of these interest keywords
+interest_bigrams <- bigrams %>%
+  filter(str_detect(bigram, regex(pattern, ignore_case = TRUE)))
+
+interest_bigram_counts <- interest_bigrams %>%
+  group_by(`Match ID 18Char`) %>%
+  summarize(interest_bigram_count = n(), .groups = "drop") %>% 
+  arrange(-interest_bigram_count)
+
+trunc_train_interests <- trunc_train %>%
+  drop_na(`Rationale for Match`) %>% 
+  left_join(interest_bigram_counts, by = "Match ID 18Char") %>%
+  mutate(interest_bigram_count = replace_na(interest_bigram_count, 0)) %>%
+  dplyr::select(`Match ID 18Char`, `Match Length`, `Rationale for Match`, interest_bigram_count) %>% 
+  mutate(interest_level = cut(interest_bigram_count,
+                              breaks = c(-1, 2, Inf),
+                              labels = c("Few", "Many")))
+
+p_q4[[2]] <- trunc_train_interests %>%
+  ggplot(aes(x = interest_level, y = `Match Length`)) +
+  geom_boxplot(fill = "#211d70", color = "black", alpha = 0.8) +
+  labs(title = "Does Number of Common Interests Impact Match Length?",
+       subtitle = "Few is defined as 0-2 common interests, while Many is 3 or more common interests",
+       x = "Common Interests",
+       y = "Match Length (months)") +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank(),
+        plot.subtitle = element_text(size = 12, face = "plain"))
+
+p_q4[[2]]
+ggsave("num_common_interest.svg")
+
+```
+
+```{r}
+TukeyHSD(aov(`Match Length` ~ interest_level, trunc_train_interests))
+```
+
+
+#### Part 5
+
+- A successful match is 1) a match that remains active, 2) a match that lasts a long time, 3) a match that closes due to the age of Little, or 4) Successful Match Closure for the Closure Reason. Provide insights for Big Brothers Big Sisters Twin Cities into what factors tend to lead to a successful (or unsuccessful) match
+
+
+### Undergraduate Part
+
+#### Part 1
+
+-	Does the cadence (i.e. days between calls) of the Match Support Calls have an impact on the distribution of Match Length?
+
+```{r, fig.width = 9, fig.height = 5}
+p_ug <- list()
+
+# Check NA
+sapply(bbbs_train, function(y) sum(length(which(is.na(y)))))
+
+# Training data has 39,345 observations
+# 138 Match IDs have gaps in Completion Date (147 NA values; some Match IDs have multiple gaps)
+# Filtering them out yields 36,839 observations
+bbbs_train <- bbbs_train %>% 
+  rename(match_id = `Match ID 18Char`)
+
+id_with_incomplete_completion <- bbbs_train %>% 
+  filter(is.na(`Completion Date`)) %>% 
+  distinct(match_id) %>% 
+  pull(match_id)
+  
+cadence_train <- bbbs_train %>% 
+  filter(!(match_id %in% id_with_incomplete_completion)) %>% 
+  group_by(match_id) %>% 
+  arrange(match_id, `Completion Date`) %>% 
+  mutate(call_order = row_number(),
+         complete_date = as.Date(`Completion Date`),
+         activation_date = as.Date(`Match Activation Date`)) %>%
+  dplyr::select(match_id, call_order, complete_date, activation_date, `Match Length`, Stage) 
+
+
+individual_cadence <- cadence_train %>% 
+  mutate(cadence = ifelse(call_order == 1,
+                                      as.numeric(complete_date - first(activation_date)),
+                                      as.numeric(complete_date - lag(complete_date))),
+         days_since_activation = as.numeric(complete_date - first(activation_date))) %>% 
+  mutate(period = ifelse(days_since_activation <= 365, "Early", "Late")) %>% 
+  ungroup()
+  
+
+avg_cadence <- individual_cadence %>% 
+  group_by(match_id) %>% 
+  summarize(early_cadence = if(sum(period == "Early") > 0)
+    round(mean(cadence[period == "Early"]), 2) else NA_real_,
+    late_cadence = if(sum(period == "Late") > 0)
+    round(mean(cadence[period == "Late"]), 2) else NA_real_,
+    average_cadence = round(mean(cadence), 2),
+    `Match Length` = first(`Match Length`),
+    total_calls = n()
+    ) %>% 
+  ungroup() %>% 
+  mutate(bin_cadence = case_when(
+    average_cadence < 25 ~ "< 25",
+    average_cadence >= 25 & average_cadence < 50 ~ "[25, 50)",
+    average_cadence >= 50 & average_cadence < 75 ~ "[50, 75)",
+    average_cadence >= 75 & average_cadence < 100 ~ "[75, 100)",
+    average_cadence >= 100 ~ ">= 100"
+  )) %>% 
+  mutate(bin_cadence = factor(bin_cadence, levels = c("< 25", "[25, 50)", 
+                                                      "[50, 75)", "[75, 100)",
+                                                      ">= 100")))
+    
+
+p_ug[[1]] <- avg_cadence %>% 
+  filter(`Match Length` > 1 & average_cadence < 150) %>% 
+  ggplot(aes(x = average_cadence, y = `Match Length`)) +
+  geom_point(fill = "deepskyblue4", color = "black", alpha = 0.6, pch = 21) +
+  labs(
+    title = "Impact of Call Cadence on Match Length",
+    subtitle = "Extreme outliers excluded",
+    x = "Average Cadence (days)",
+    y = "Match Length (months, log scale)"
+  ) +
+  scale_y_log10(expand = c(0, 0.1, 0.1, 0.05)) +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(plot.subtitle = element_text(size = 12, face = "plain"),
+        panel.grid.major.x = element_blank())
+
+
+first_call <- individual_cadence %>% 
+  filter(call_order == 1)
+
+p_ug[[2]] <- first_call %>% 
+  filter(days_since_activation >= 0) %>% 
+  ggplot(aes(x = days_since_activation, y = `Match Length`)) +
+  geom_point(fill = "deepskyblue4", color = "black", alpha = 0.6, pch = 21) +
+  labs(
+    title = "Impact of Activation-to-First Call on Match Length",
+    x = "First Call (days since activation)",
+    y = "Match Length (months)"
+  ) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank())
+
+p_ug[[1]]
+p_ug[[2]]
+ggsave("active-to-first.svg")
+
+
+cor.test(avg_cadence$average_cadence, avg_cadence$`Match Length`)
+cor.test(first_call$days_since_activation, first_call$`Match Length`)
+
+```
+
+```{r, fig.width = 12, fig.height = 5}
+ p_ug[[3]] <- avg_cadence %>% 
+  ggplot(aes(x = bin_cadence, y = `Match Length`)) +
+  geom_boxplot(color = "black", fill = "deepskyblue4", alpha = 0.8) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank()) +
+  labs(y = "Match Length (months)",
+       x = "Binned Cadence (days)",
+       title = "Match Length Distribution by Cadence")
+
+p_ug[[1]] + p_ug[[3]]
+ggsave("call_cadence.svg")
+
+
+TukeyHSD(aov(`Match Length` ~ bin_cadence, avg_cadence))
+
+```
+
+
+```{r, fig.width = 9, fig.height = 5}
+cadence_long <- avg_cadence %>%
+  filter(!is.na(early_cadence) & !is.na(late_cadence)) %>%
+  pivot_longer(cols = c(early_cadence, late_cadence), 
+               names_to = "Period", values_to = "Cadence") %>% 
+  mutate(Period = ifelse(Period == "early_cadence", "Early Cadence",
+                         "Late Cadence"))
+
+p_ug[[4]] <- ggplot(cadence_long, aes(x = Period, y = Cadence)) +
+  geom_boxplot(fill = "deepskyblue4", alpha = 0.8) +
+  labs(title = "Distribution of Cadence: Early vs Late",
+       x = "Period", y = "Cadence (days, log scale)") +
+  scale_y_log10(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank())
+
+# Early Cadence vs Match Length
+avg_cadence %>% 
+  filter(`Match Length` > 0 & early_cadence < 150) %>% 
+  ggplot(aes(x = early_cadence, y = `Match Length`)) +
+ geom_point(fill = "deepskyblue4", color = "black", alpha = 0.6, pch = 21) +
+  labs(title = "Early Cadence vs Match Length",
+       x = "Early Cadence (days)",
+       y = "Match Length (months, log scale)") +
+  scale_y_log10(expand = c(0, 0.1, 0.1, 0.05)) +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(plot.subtitle = element_text(size = 12, face = "plain"),
+        panel.grid.major.x = element_blank())
+
+
+# Late Cadence vs Match Length
+avg_cadence %>% 
+  filter(`Match Length` > 0 & !is.na(late_cadence)) %>% 
+  filter(late_cadence < 150) %>% 
+  ggplot(aes(x = late_cadence, y = `Match Length`)) +
+ geom_point(fill = "deepskyblue4", color = "black", alpha = 0.6, pch = 21) +
+  labs(title = "Late Cadence vs Match Length",
+       x = "Late Cadence (days)",
+       y = "Match Length (months, log scale)") +
+  scale_y_log10(expand = c(0, 0.1, 0.1, 0.05)) +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(plot.subtitle = element_text(size = 12, face = "plain"),
+        panel.grid.major.x = element_blank())
+
+p_ug[[4]]
+
+```
+
+-	Consider the Match Support Contact Notes open text field.  
+  -	Are there key words, phrases, or sentiments within this field that are related to Match Length? 
+  -	Do the key words, phrases, or sentiments differ between the early stages and late stages of a match?
+
+```{r, fig.width = 10, fig.height = 7}
+msc_notes <- bbbs_train %>% 
+  dplyr::select(match_id, `Completion Date`, `Match Activation Date`, `Match Support Contact Notes`, `Match Length`, Stage) %>% 
+  drop_na(`Match Support Contact Notes`) %>% 
+  filter(!(match_id %in% id_with_incomplete_completion)) %>% 
+  arrange(match_id, `Completion Date`) %>% 
+  mutate(complete_date = as.Date(`Completion Date`),
+         activation_date = as.Date(`Match Activation Date`)) %>%
+  rename(match_length = `Match Length`,
+         notes = `Match Support Contact Notes`) %>% 
+  dplyr::select(match_id, notes, complete_date, activation_date, match_length, Stage) %>% 
+  group_by(match_id) %>% 
+  mutate(days_since_activation = as.numeric(complete_date - first(activation_date))) %>% 
+  mutate(period = ifelse(days_since_activation <= 365, "Early", "Late")) %>% 
+  ungroup()
+
+
+count_early <- msc_notes %>% 
+  count(period) %>% 
+  filter(period == "Early") %>% 
+  pull(n)
+
+count_late <- msc_notes %>% 
+  count(period) %>% 
+  filter(period == "Late") %>% 
+  pull(n)
+
+
+long_notes <- msc_notes %>% 
+  mutate(notes = str_replace_all(
+    notes,
+    c("B_first_name" = "Big", "L_first_name" = "Little", "B_last_name" = "Big", "L_last_name" = "Little",
+      "BS" = "Big", "BB" = "Big", "LS" = "Little", "LB" = "Little")
+  )) %>% 
+  mutate(notes = tolower(notes)) %>%
+  mutate(notes = str_replace_all(notes, "[^[:alnum:]\\s]", "")) %>% 
+  unnest_tokens(bigram, notes, token = "ngrams", n = 2) %>% 
+  separate(bigram, into = c("word1", "word2"), sep = " ") %>%
+  mutate(word1 = str_trim(word1)) %>%
+  mutate(word2 = str_trim(word2)) %>% 
+  filter(!word1 %in% c(get_stopwords(),
+                       "10py3alpkuzcx149_5lcmchtlpjv79xl4", "big", "little", "na", "pg", "pc",
+                       "additional", "mc", "emc", "match", "mins", "min", "question", "answer",
+                       "littles", "the", "because", "to", "if", "you", "mec", "mss", "jj", "system",
+                       "commentslist", "i", "as", "did", "have", "a", "that", "this", "they", "are",
+                       "what", "and", "your", "1faipqlsdlkcrbimw7mkbgpkvdajdiovvjbh44pgridhrh78xhvs5j0g",
+                       "b_first_name", "l_first_name", "docs.google.com", "debra", "d", "e", "hi", "form", "forms",
+                       "n", "sf_link", "1inw2wmvudwk3s7owqbca", "b", "c", "f", "g", "h", "i", "j", "k", "l", "m", "o",
+                       "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "andy", "http", "link", "https", "mj", "katherine",
+                       "nika", "andrew", "7p", "80s", "80", "6", "1faipqlsdgtdgogqf8cz1yxskvlxaeainfm3tp2hxfw_i1h2bqarxya", "question",
+                       "answer", "b_last_name", "l_last_name", "edit", "pm", "rtzk7ugrut0", "katrin", "1faipqlsdgtdgogqf8cz1yxskvlxaeainfm3tp2hxfw_i1h2bqarxyag",
+                       "sfc", "however", "doesn", "www", "ect", "1faipqlsfzrujqhghdi6uv6eyltdumnwlmnjpoi1zhgc_sc69tklpiog", "29th", "aff", "paul", "oddtdtcreator",
+                       "shawn", "rsvp", "pbo2o3idhgwqpnb2ck7gwjmq", "1faipqlsfhioc89nh_asvgbxgv0fre64i55myxwrxjpysme_udcjpxtw", "1faipqlsdxifdjkmzzm6nyuip614ihn",
+                       "viewform", "usp", "gigi", "sarah") 
+         & !str_detect(word1, "\\d") & !str_detect(word1, "\\.com") & !str_detect(word1, "\\.org") & !str_detect(word1, "www"),
+         !word2 %in% c(get_stopwords(),
+                       "10py3alpkuzcx149_5lcmchtlpjv79xl4", "big", "little", "na", "pg", "pc",
+                       "additional", "mc", "emc", "match", "mins", "min", "question", "answer",
+                       "littles", "the", "because", "to", "if", "you", "mec", "mss", "jj", "system",
+                       "commentslist", "i", "as", "did", "have", "a", "that", "this", "they", "are",
+                       "what", "and", "your", "1faipqlsdlkcrbimw7mkbgpkvdajdiovvjbh44pgridhrh78xhvs5j0g",
+                       "b_first_name", "l_first_name", "docs.google.com", "debra", "d", "e", "hi", "form", "forms",
+                       "n", "sf_link", "1inw2wmvudwk3s7owqbca", "b", "c", "f", "g", "h", "i", "j", "k", "l", "m", "o",
+                       "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "andy", "http", "link", "https", "mj", "katherine",
+                       "nika", "andrew", "7p", "80s", "80", "6", "1faipqlsdgtdgogqf8cz1yxskvlxaeainfm3tp2hxfw_i1h2bqarxya", "question",
+                       "answer", "b_last_name", "l_last_name", "edit", "pm", "rtzk7ugrut0", "katrin", "1faipqlsdgtdgogqf8cz1yxskvlxaeainfm3tp2hxfw_i1h2bqarxyag",
+                       "sfc", "however", "doesn", "www", "ect", "1faipqlsfzrujqhghdi6uv6eyltdumnwlmnjpoi1zhgc_sc69tklpiog", "29th", "aff", "paul", "oddtdtcreator",
+                       "shawn", "rsvp", "pbo2o3idhgwqpnb2ck7gwjmq", "1faipqlsfhioc89nh_asvgbxgv0fre64i55myxwrxjpysme_udcjpxtw", "1faipqlsdxifdjkmzzm6nyuip614ihn",
+                       "viewform", "usp", "gigi", "sarah") & !str_detect(word2, "\\d") & !str_detect(word2, "\\.com") & !str_detect(word2, "\\.org")  
+         & !str_detect(word2, "www")) %>%
+  unite(bigram, word1, word2, sep = " ")
+
+
+cleaned_bigram <- long_notes %>% 
+  filter(!(grepl("bigbig|\\bill\\b|\\bit\\b|2017|12317|their|\\bfor\\b|\\bthere\\b", bigram) |
+             grepl("\\bof\\b|\\bat\\b|12017|2018|2019|2020|2021|2022|2023|2024", bigram) |
+             grepl("\\bwere\\b|\\bso\\b|himher|heshe|\\bu\\b|april|march|june|july", bigram) |
+             grepl("sullivan sb|\\banne\\b|august|7517|\\bin\\b|\\b(s)?he\\b", bigram) |
+             grepl("[[:digit:]]|\\bme\\b|questions|\\bor\\b|\\bbe\\b|\\bvia\\b", bigram) |
+             grepl("\\betc\\b|\\bwe\\b|twin cities|please describe|approximately how|please respond", bigram) |
+             grepl("\\bwhy\\b|\\bwhat\\b|\\bwhen\\b|monthquarter|\\bhow\\b|\\bwhere\\b|\\bwho\\b", bigram) |
+             grepl("msc|callahan schreiber|\\bform\\b|\\bis\\b|\\bon\\b|there anything|checkin(s)?", bigram) |
+             grepl("check-in|check in|check ins|mary callahan|any other|please use", bigram) |
+             grepl("with|childvolunteer|parentvolunteer|would|\\bhas\\b|safety reminder|does|also|\\bid\\b", bigram) |
+             grepl("youre|\\bthen\\b|emailaddress|email|paul mn|st thomas|pm hi|bigstwincitiesorg|youve", bigram) |
+             grepl("httpsbbbsgtcasmeth|rob|\\bwas\\b|minneapolis|address|paul|phonenumber|sheherhers|\\bany\\b", bigram) |
+             grepl("\\bbut\\b|office|schreiber|\\bhad\\b|please provide|our|above|sister(s)?|\\bhave\\b|sullivan", bigram) |
+             grepl("contact information|\\bher\\b|\\bhim\\b|anything else|youd|\\bpm\\b|olivia|mario bradshaw", bigram) |
+             grepl("\\bother\\b|\\bhes\\b|andrea c|coordinator|\\bdana\\b|\\bim\\b|\\bx\\b|\\bo\\b|tmec|bcc", bigram) |
+             grepl("\\bweve\\b|sandy camacho|\\bmn\\b|uniqueka|michael|mario|httpswwwfamilyfuntwincitiescom", bigram) |
+             grepl("youll|best describes|\\ban\\b|\\bive\\b|\\bp\\b|louis|\\bhis\\b|katie|please rate|tess haakonson", bigram) |
+             grepl("sounds like|sami|child safety|child development|full (attempts)?details|communication log|saida", bigram) |
+             grepl("relationship development|many times|take care|please let|more than|less than|information updates|moving contact", bigram) |
+             grepl("life changes|changes moving|\\bdo\\b|follow up|aaron|pgbigmeg|\\bfrom\\b|aaron|leslie|mcp|\\bbs\\b", bigram) |
+             grepl("which words|words best|all appropriate|appropriate boxes|confidentiality statement|connections worksheet", bigram) |
+             grepl("connections worksheet|notification letter|\\bsor\\b|\\bwill\\b|request follow|out session|\\bthem\\b|\\bby\\b", bigram) | 
+             grepl("\\bie\\b|theyve|bbbs|\\bhi\\b|\\bper\\b|nick|httpwwwmatchcentralgtcorg|\\bb\\b|three e|\\bus\\b|\\bc\\b", bigram) |
+             grepl("\\bbs\\b|\\bls\\b|jojo|kylie|alexa|chris|\\bumn\\b|c high|\\bbigw\\b|\\bn\\b|kate|grant|lise", bigram) |
+             grepl("\\by\\b|\\bwes\\b|\\bdoug\\b|\\bsaid\\b|mitch|\\bbc\\b|\\bsam\\b|charlie|\\btony\\b|toria|\\bname\\b", bigram) |
+             grepl("secondary|policies|\\bq\\b|susie|doug|lynx|matt|wednesday|cece|gettoknowyoubetteractivity|nikki", bigram) |
+             grepl("reminder|kirsten|sanghera|\\bmary\\b|sorena|\\byang\\b|years matched|\\bmai\\b|\\bl\\b|salena|williams", bigram) |
+             grepl("brooke|erickson|bigs|\\bdanny\\b|sorena|\\bfranco\\b|acosta|\\bgabby\\b|\\bl\\b|salena|williams", bigram) |
+             grepl("alex|\\bsome\\b|jack|\\bsb\\b|carlson|tommy|see notes|click here|kang moua|players ages|steve|please note", bigram) |
+             grepl("\\btim\\b|sinnett|see activities|please|\\bd\\b|theyd|\\bv\\b|msmc|dae dae|\\bee\\b|mns", bigram)))
+
+bigram_freq <- cleaned_bigram %>%
+  count(period, bigram, sort = TRUE) %>%
+  group_by(period) %>%
+  top_n(20, n) %>%
+  ungroup() %>% 
+  mutate(n = ifelse(period == "Early", n / count_early,
+                    n / count_late))
+
+# Common Bigrams
+p_ug[[5]] <- bigram_freq %>%
+  mutate(bigram = reorder_within(bigram, n, period)) %>%
+  ggplot(aes(bigram, n, fill = period)) +
+  geom_col(show.legend = FALSE, color = "black", alpha = 0.8) +
+  facet_wrap(~period, scales = "free_y") +
+  coord_flip() +
+  scale_x_reordered(expand = c(0, 0.1, 0.05, 0.05)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c("deepskyblue4", "orangered2")) +
+  theme(panel.grid.major.y = element_blank(),
+        axis.text = element_text(size = 12)) +
+  labs(y = "Occurrence per Contact Note", x = "", 
+       title = "Most Common Bigrams by Match Stage")
+
+
+p_ug[[5]]
+ggsave("bigram_match_stage.svg")
+```
+
+
+```{r}
+p_ug[[5]]
+```
+
+
+
+```{r}
+# Finding bigrams distinctive to each stage
+bigram_log_odds <- cleaned_bigram %>%
+  count(period, bigram, sort = T) %>%
+  group_by(bigram) %>%
+  filter(sum(n) >= 5) %>%  # keep only bigrams with >=5 uses overall
+  ungroup() %>%
+  pivot_wider(names_from = period, values_from = n, values_fill = 0) %>%
+  mutate(
+    log_odds = log(
+      ((Early + 1) / sum(Early + 1)) /
+      ((Late + 1)  / sum(Late + 1))
+    )
+  ) %>%
+  arrange(desc(log_odds))
+
+bigram_log_odds %>% 
+  tail()
+```
+
+```{r, fig.width = 10, fig.height = 7}
+sentiment_bigram <- cleaned_bigram %>% 
+  mutate(sentiment = sentiment(bigram)$sentiment)
+
+sentiment_bigram
+
+sentiment_notes <- msc_notes  %>% 
+  mutate(notes = tolower(notes)) %>% 
+  mutate(notes = str_replace_all(
+    notes,
+    c("b_first_name" = "big", "l_first_name" = "little", "b_last_name" = "big", "l_last_name" = "little",
+      "bs" = "big", "bb" = "big", "ls" = "little", "lb" = "little", "question:" = "", "activities:" = "", "answer:" = "", "child safety:" = "",
+      "child development:" = "", "child/volunteer relationship development:" = "", "relationship with bbbs:" = "",
+      "relationship with bigbig:" = "", "parent/volunteer concerns:" = "", "mss notes:" = "", "https://bbbsgtc.as.me/MCS" = "")
+  )) %>% 
+  mutate(notes = str_trim(notes)) %>% 
+  mutate(sentiment = sentiment_by(notes)$ave_sentiment)
+
+annotation_data <- sentiment_notes %>%
+  group_by(period) %>%
+  summarize(avg = round(mean(sentiment), 2), std_dev = round(sd(sentiment), 3))
+
+
+p_ug[[6]] <- ggplot(sentiment_notes, aes(x = sentiment)) +
+  geom_histogram(aes(fill = period), alpha = 0.8, show.legend = F, color = "black") +
+  facet_grid(period ~ ., scale = "free_y") +
+  labs(title = "Distribution of Sentiment Scores by Match Stage", 
+       x = "Sentiment Score", y = "Count") +
+  #scale_x_reordered(expand = c(0, 0.1, 0.05, 0.05)) +
+  scale_y_continuous(expand = c(0, 0.1, 0.05, 0.05)) +
+  scale_fill_manual(values = c("deepskyblue4", "orangered2")) +
+  theme(panel.grid.major.x = element_blank()) +
+  geom_label(data = annotation_data,
+            aes(x = -Inf, y = Inf, label = paste("Mean = ", avg, "\nSD =", std_dev)),
+            hjust = -0.1, vjust = 2, size = 4)
+
+
+p_ug[[6]]
+```
+
+```{r, fig.width = 9, fig.height = 5}
+# LDA
+
+lda_bigram <- cleaned_bigram %>% 
+  mutate(doc_id = paste(match_id, complete_date, sep = "_"))
+
+bigram_dtm <- lda_bigram %>%
+  filter(!(grepl("[0-9]+|1faipqlsdlkcrbimw7mkbgpkvdajdiovvjbh44pgridhrh78xhvs5j0g|b_first_name|b_first_name|big", bigram) |
+             grepl("docs.google.com|debra|\\bd\\b|\\be\\b|\\bhi\\b|\\bform(s)?\\b|\\bnb\\b|sf_link|1inw2wmvudwk3s7owqbca", bigram) |
+             grepl("l_first_name|\\bs\\b|andy|bbbsgtc|\\blink\\b|https|\\bmj\\b|katherine|andrew|nika|7p|80(s)?|6", bigram) |
+             grepl("1faipqlsdgtdgogqf8cz1yxskvlxaeainfm3tp2hxfw_i1h2bqarxyag|sfc|question|\\bp\\b|katrin|however|doesn|bbbsa.+", bigram) |
+             grepl("2j000001d06o|30p|50000000nqrz|\\bill\\b|sarah|gigi|usp|viewform|b_last_name|l_last_name|edit\\bn\\b|pm|rtzk7ugrut0", bigram) |
+             grepl("www.+|4|1faipqlsdxifdjkmzzm6nyuip614ihn|shawn|rsvp|pbo2o3idhgwqpnb2ck7gwjmq|1faipqlsfhioc89nh_asvgbxgv0fre64i55myxwrxjpysme_udcjpxtw", bigram) |
+             grepl("\\bect\\b|13|18|1faipqlsfzrujqhghdi6uv6eyltdumnwlmnjpoi1zhgc_sc69tklpiog|29th|856178391617|\\baff\\b|oddtdtcreator|paul", bigram))) %>% 
+  count(doc_id, bigram, sort = TRUE) %>% 
+  cast_dtm(document = doc_id, term = bigram, value = n)
+  
+lda_fit <- LDA(bigram_dtm, k = 10)
+topics <- tidy(lda_fit, matrix = "beta")
+
+term_order <- topics |>
+  group_by(term) |>
+  summarise(beta_iqr = IQR(beta)) |>
+  arrange(-beta_iqr) |>
+  pull(term)
+
+topic_mat <- topics |>
+  pivot_wider(names_from = "topic", values_from = "beta")  %>% 
+  column_to_rownames("term")
+
+
+hclust_result <- hclust(dist(lda_fit@gamma))
+document_order <- lda_fit@documents[hclust_result$order]
+
+memberships <- tidy(lda_fit, matrix = "gamma")  %>% 
+  left_join(msc_notes %>% mutate(document = paste(match_id, complete_date, sep = "_"))  %>% mutate(document = as.character(document))) %>% 
+  mutate(document = factor(document, levels = document_order))
+
+memberships
+
+ggplot(memberships) +
+  geom_col(aes(gamma, document, fill = as.factor(topic), col = as.factor(topic))) +
+  facet_grid(period ~ ., scale = "free", space = "free") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_color_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2") +
+  theme(
+    strip.text.y = element_text(angle = 0),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+p_ug[[9]] <- memberships %>% 
+  group_by(document) %>% 
+  distinct(topic, .keep_all = T) %>% 
+  #mutate(gamma_std = (gamma - min(gamma)) / (max(gamma) - min(gamma))) %>%
+  #ungroup() %>% 
+  ggplot() + 
+  geom_col(aes(gamma, document, fill = as.factor(topic), col = as.factor(topic))) +
+  facet_grid(period ~ ., scale = "free", space = "free") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_color_brewer(palette = "Paired") +
+  scale_fill_brewer(palette = "Paired") +
+  theme(
+    strip.text.y = element_text(angle = 0),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(y = "Contact Notes", x = "Topic Probability",
+       color = "Topic", fill = "Topic",
+       title = "Structure of Contact Notes by Match Stage")
+
+p_ug[[9]]  
+
+```
+
+```{r}
+beta <- tidy(lda_fit, matrix = "beta") |>
+  group_by(topic) |>
+  slice_max(beta, n = 10) |>
+  mutate(term = reorder_within(term, -beta, topic)) %>% 
+  rename(Topic = topic,
+         Term = term,
+         Beta = beta) %>% 
+  mutate(Term = str_remove(Term, "___\\d+$"))
+
+beta
+```
+
+
+
+
+
+```{r}
+# memberships %>% 
+#   filter(document == "a1vHt000004lFpbIAE_2024-10-13") %>% 
+#   distinct(topic, .keep_all = T) %>% 
+#   summarize(sum(gamma))
+
+
+p_ug[[10]] <- memberships %>% 
+  group_by(document) %>% 
+  distinct(topic, .keep_all = T) %>% 
+  ggplot() + 
+  geom_col(aes(gamma, document, fill = as.factor(topic), col = as.factor(topic))) +
+  facet_grid(length_cat ~ ., scale = "free", space = "free") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_color_brewer(palette = "Paired") +
+  scale_fill_brewer(palette = "Paired") +
+  theme(
+    strip.text.y = element_text(angle = 0),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()
+  ) +
+  labs(y = "Contact Notes", x = "Topic Probability",
+       color = "Topic", fill = "Topic",
+       title = "Structure of Contact Notes by Match Length")
+
+p_ug[[10]]  
+
+
+
+```
+
+
+########## Match Length
+
+```{r, fig.width = 10, fig.height = 7}
+msc_notes <- msc_notes %>%
+  mutate(length_cat = ifelse(match_length < median(match_length), "Short", "Long"))
+
+count_short <- msc_notes %>% 
+  count(length_cat) %>% 
+  filter(length_cat == "Short") %>% 
+  pull(n)
+
+count_long <- msc_notes %>% 
+  count(length_cat) %>% 
+  filter(length_cat == "Long") %>% 
+  pull(n)
+
+
+bigram_freq_length <- cleaned_bigram %>%
+  mutate(length_cat = ifelse(match_length < median(match_length), "Short", "Long")) %>% 
+  count(length_cat, bigram, sort = TRUE) %>%
+  group_by(length_cat) %>%
+  top_n(20, n) %>%
+  ungroup() %>% 
+  mutate(n = ifelse(length_cat == "Short", n / count_short, n / count_long)) %>% 
+  mutate(length_cat = factor(length_cat, levels = c("Short", "Long")))
+
+
+p_ug[[7]] <- bigram_freq_length %>%
+  mutate(bigram = reorder_within(bigram, n, length_cat)) %>%
+  ggplot(aes(bigram, n, fill = length_cat)) +
+  geom_col(show.legend = FALSE, color = "black", alpha = 0.8) +
+  facet_wrap(~length_cat, scales = "free_y") +
+  coord_flip() +
+  scale_x_reordered(expand = c(0, 0.1, 0.05, 0.05)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(values = c("deepskyblue4", "orangered2")) +
+  theme(panel.grid.major.y = element_blank(),
+        axis.text = element_text(size = 12)) +
+  labs(y = "Occurrence per Contact Note", x = "", 
+       title = "Most Common Bigrams by Match Length")
+
+
+p_ug[[7]]
+ggsave("bigram_ml.svg")
+
+
+```
+
+```{r}
+bigram_log_odds_ml <- cleaned_bigram  %>%
+  mutate(length_cat = ifelse(match_length < median(match_length), "Short", "Long")) %>%
+  count(length_cat, bigram, sort = T) %>%
+  group_by(bigram) %>%
+  filter(sum(n) >= 5) %>% 
+  ungroup() %>%
+  pivot_wider(names_from = length_cat, values_from = n, values_fill = 0) %>%
+  mutate(
+    log_odds = log(
+      ((Long + 1) / sum(Long + 1)) /
+      ((Short + 1)  / sum(Short + 1))
+    )
+  ) %>%
+  arrange(desc(log_odds))
+
+bigram_log_odds_ml %>% 
+  head()
+```
+
+
+```{r, fig.width = 9, fig.height = 5}
+sentiment_notes %>% 
+  group_by(match_id) %>% 
+  mutate(call_order = row_number()) %>% 
+  ungroup() %>% 
+  filter(match_id %in% c(long_match)) %>% 
+  group_by(match_id) %>% 
+  filter(call_order <= 3 | call_order > (max(call_order) - 3)) %>% 
+  mutate(when_call = case_when(
+    call_order <= 3 ~ "First 3 Meetings",
+    call_order > (max(call_order) - 3) ~ "Last 3 Meetings"
+  )) %>% 
+  ungroup() %>% 
+  group_by(when_call) %>% 
+  summarize(mean_sentiment = mean(sentiment)) %>% 
+  ggplot(aes(x = when_call, y = mean_sentiment)) +
+  geom_col(aes(fill = when_call), alpha = 0.8, show.legend = F, color = "black") +
+  labs(title = "Mean Sentiment Scores by During First/Last Check-ins", 
+       x = "", y = "Mean Sentiment") +
+  #scale_x_reordered(expand = c(0, 0.1, 0.05, 0.05)) +
+  scale_y_continuous(expand = c(0, 0.0, 0.05, 0.05)) +
+  scale_fill_manual(values = c("deepskyblue4", "orangered2")) +
+  theme(panel.grid.major.x = element_blank())
+  
+
+long_match <- sentiment_notes %>% 
+  count(match_id) %>% 
+  filter(n > 6) %>% 
+  pull(match_id)
+
+```
+
+
+
+```{r, fig.width = 9, fig.height = 5}
+mean_sentiment_ml <- sentiment_notes %>% 
+  group_by(match_id) %>% 
+  summarize(mean_sentiment = mean(sentiment),
+            match_length = first(match_length),
+            length_cat = first(length_cat))
+
+
+# Use this
+sentiment_match <- sentiment_by(sentiment_notes$notes, by = sentiment_notes$match_id)
+
+match_info <- msc_notes %>%
+  group_by(match_id) %>%
+  summarise(match_length = first(match_length),
+            period = first(period),
+            length_cat = first(length_cat))
+
+sentiment_match <- sentiment_match %>% 
+  left_join(match_info, by = "match_id")
+
+p_ug[[8]] <- sentiment_match %>% 
+  ggplot(aes(x = ave_sentiment, y = match_length, fill = length_cat)) +
+  geom_point(color = "black", alpha = 0.6, pch = 21) +
+  labs(title = "Average Sentiment vs Match Length",
+       x = "Average Sentiment Score",
+       y = "Match Length (months)") +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.05)) +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.01)) +
+  scale_fill_manual(values = c("orangered2", "deepskyblue4")) +
+  theme(plot.subtitle = element_text(size = 12, face = "plain"),
+        panel.grid.major.x = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "right")
+
+
+p_ug[[8]]
+```
+
+```{r}
+sentiment_match %>% 
+  filter(match_id == "a1v2J0000027HCqQAM")
+```
+
+
+
+```{r}
+mean_sentiment_ml %>% 
+  filter(length_cat == "Long") 
+  filter(match_id == "a1v2J0000027CWfQAM")
+```
+
+
+-	Predictive Component
+  -	Create a predictive model for Match Length
+  -	Build the model using the Training set.  You will be required to submit predictions for Match Length for cases in the Test-Truncated set.  Additional information will be forthcoming regarding the submission of your predictions.
+  -	Root Mean Square Error (RMSE) will be the metric used to evaluate predictions for the Test cases.
+
+Comments:  
+1)	The difference between Match Activation Date and most recent Completion Date is strongly correlated with Match Length.  Thus, the Match Support Contact Notes for the cases in the Test set have been truncated.  That is, the last few instances of Match Support Contact Notes have been removed from the Test-Truncated.  Additional explanation of this process is provided in the Data Sources document. [ Link ]
+2)	The quality of your prediction will be evaluated objectively using RMSE.  In addition, the rubrics used by the judges will contain items related to your predictive modeling strategy and your ability to leverage additional information beyond the cadence or number of Match Support Contact Notes related to each match. 
+
+
+```{r, fig.width = 9, fig.height = 5}
+pred <- list()
+
+first_pass <- bbbs_train %>% 
+  group_by(match_id) %>% 
+  summarize(n = n(), match_length = first(`Match Length`))
+
+pred[[1]] <- first_pass %>% 
+  ggplot(aes(x = n, y = match_length)) +
+  geom_point(fill = "#009686", color = "black", alpha = 0.6, pch = 21) +
+  labs(
+    title = "Match Length vs. Total Check-ins",
+    x = "Total Check-Ins",
+    y = "Match Length (months)"
+  ) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.05)) +
+  scale_x_continuous(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank())
+  
+pred[[1]]
+
+
+```
+
+```{r, fig.width = 9, fig.height = 5}
+library(sf)
+
+temp_shapefile <- tempfile()
+download.file("https://www2.census.gov/geo/tiger/TIGER2020PL/STATE/27_MINNESOTA/27/tl_2020_27_bg20.zip", temp_shapefile)
+unzip(temp_shapefile)
+
+blocks_mn <- read_sf("tl_2020_27_bg20.shp")
+
+distance_df <- bbbs_train %>% 
+  filter(!is.na(`Big Home Census Block Group`) & !is.na(`Little Mailing Address Census Block Group`)) %>% 
+  dplyr::select(match_id, `Big Home Census Block Group`, `Little Mailing Address Census Block Group`, `Match Length`) %>%
+  group_by(match_id) %>% 
+  mutate(big_home = as.character(`Big Home Census Block Group`),
+    small_home = as.character(`Little Mailing Address Census Block Group`)) %>% 
+  summarize(big_home = first(big_home), small_home = first(small_home),
+            match_length = first(`Match Length`)) %>% 
+  ungroup()
+
+
+bg_ids <- unique(c(distance_df$big_home, distance_df$small_home))
+
+bg_geometries <- blocks_mn %>%
+  filter(GEOID20 %in% bg_ids) %>%
+  st_transform(4326)
+
+
+distance_geo <- distance_df %>%
+  left_join(bg_geometries %>% dplyr::select(GEOID20, geometry) %>% rename(big_geom = geometry),
+            by = c("big_home" = "GEOID20")) %>%
+  left_join(bg_geometries %>% dplyr::select(GEOID20, geometry) %>% rename(small_geom = geometry),
+            by = c("small_home" = "GEOID20")) 
+
+
+distance_geo <- distance_geo %>%
+  mutate(
+    big_centroid = st_centroid(big_geom),
+    small_centroid = st_centroid(small_geom)
+  )
+
+distance_geo <- distance_geo %>%
+  mutate(distance_m = st_distance(big_centroid, small_centroid, by_element = TRUE),
+         distance_km = as.numeric(distance_m) / 1000)  %>% 
+  drop_na(distance_km)
+
+pred[[2]] <- distance_geo %>% 
+  ggplot(aes(x = distance_km, y = match_length)) +
+  geom_point(fill = "#009686", color = "black", alpha = 0.6, pch = 21) +
+  labs(
+    title = "Does Distance between Big/Little Impact Match Length?",
+    x = "Distance (km)",
+    y = "Match Length (months)"
+  ) +
+  scale_y_continuous(expand = c(0, 0.1, 0.1, 0.05)) +
+  scale_x_log10(expand = c(0, 0.1, 0.1, 0.5)) +
+  theme(panel.grid.major.x = element_blank())
+  
+pred[[2]]
+
+```
+
+
+```{r, mohamedzaimi}
+first_pass <- bbbs_train %>% 
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Plus", "Site", `Program Type`)) %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Facilitated", "Site", `Program Type`)) %>% 
+  mutate(start_year = as.factor(year(`Match Activation Date`))) %>% 
+  group_by(match_id) %>% 
+  summarize(total_checkins = n(), match_length = first(`Match Length`), program_type = first(`Program Type`),
+            start_year = first(start_year)) %>% 
+  left_join(trunc_train_gender %>% dplyr::select(`Match ID 18Char`, `Same Gender`), by = c("match_id" = "Match ID 18Char")) %>% 
+  left_join(trunc_train %>% dplyr::select(match_id, `Age Difference`), by = "match_id") %>% 
+  left_join(trunc_train_race %>% dplyr::select(`Match ID 18Char`, `Same Race`), by = c("match_id" = "Match ID 18Char")) %>% 
+  left_join(trunc_train_edu %>% dplyr::select(`Match ID 18Char`, education_level), by = c("match_id" = "Match ID 18Char")) %>%
+  left_join(trunc_train_rship %>% dplyr::select(`Match ID 18Char`, relationship_status), by = c("match_id" = "Match ID 18Char")) %>% 
+  left_join(trunc_train_occ %>% dplyr::select(`Match ID 18Char`, `Big Occupation`), by = c("match_id" = "Match ID 18Char")) %>% 
+  left_join(trunc_train_former %>% dplyr::select(`Match ID 18Char`, past_exp), by = c("match_id" = "Match ID 18Char")) %>% 
+  left_join(trunc_train_lang %>% dplyr::select(`Match ID 18Char`, Language_Alignment), by = c("match_id" = "Match ID 18Char")) %>%
+  left_join(trunc_train_interests %>% dplyr::select(`Match ID 18Char`, interest_level), by = c("match_id" = "Match ID 18Char")) %>% 
+  left_join(distance_geo %>% dplyr::select(match_id, distance_km), by = "match_id") %>% 
+  left_join(avg_cadence %>% dplyr::select(match_id, average_cadence), by = "match_id") %>% 
+  left_join(sentiment_match %>% dplyr::select(match_id, length_cat, ave_sentiment), by = "match_id")
+  
+first_pass <- first_pass %>% 
+  left_join(bbbs_train %>% distinct(match_id, .keep_all = T) %>% dplyr::select(match_id, Stage), by = "match_id") %>% 
+  dplyr::select(match_id, total_checkins, match_length, average_cadence, length_cat, Stage, everything())
+
+
+write_csv(first_pass, "train.csv")
+  
+  
+trunc_train
+
+trunc_train %>% 
+  drop_na(`Big Gender`) %>% 
+  drop_na(`Little Gender`)
+  
+bbbs_train %>% 
+  distinct(match_id, .keep_all = T) %>% 
+  count(Stage)
+
+
+trunc_train_gender 
+
+sapply(first_pass, function(x) (sum(is.na(x))))
+  
+first_pass %>% 
+  count(program_type)
+```
+
+
+```{r}
+trunc_test <- unique(bbbs_test[ , c("Match ID 18Char", "Rationale for Match", 
+                                      "Program Type", "Big Age", "Little Birthdate", "Big Occupation", 
+                                      "Big Level of Education", "Big Gender", "Little Gender",
+                                      "Big Race/Ethnicity", "Little Participant: Race/Ethnicity", "Big Contact: Marital Status",
+                                      "Big Contact: Interest Finder - Hobbies", "Little Contact: Interest Finder - Hobbies",
+                                      "Big Contact: Interest Finder - Sports", "Little Contact: Interest Finder - Sports", 
+                                      "Big Contact: Interest Finder - Places To Go", "Little Contact: Interest Finder - Places To Go", 
+                                      "Big Contact: Interest Finder - Entertainment", "Little Contact: Interest Finder - Entertainment",
+                                      "Big Contact: Former Big/Little", "Big Languages", "Little Contact: Language(s) Spoken",
+                                      "Little Contact: Interest Finder - Career", "Little Contact: Interest Finder - Personality", 
+                                      "Little Contact: Interest Finder - Three Wishes", 
+"Little Contact: Interest Finder - Other Interests", "Little Contact: Interest Finder - Arts")]) %>% 
+  rename(match_id = `Match ID 18Char`) %>% 
+  mutate(`Little Age` = floor(time_length(interval(as.Date(`Little Birthdate`), Sys.Date()), "years"))) %>% 
+  mutate(`Age Difference` = `Big Age` - `Little Age`) %>% 
+  mutate(`Age Difference` = case_when(
+    `Age Difference` <= 5 ~ "5 or younger",
+    `Age Difference` > 5 & `Age Difference` <= 10 ~ "6-10",
+    `Age Difference` > 10 & `Age Difference` <= 15 ~ "11-15",
+    `Age Difference` > 15 & `Age Difference` <= 20 ~ "16-20",
+    `Age Difference` > 20 & `Age Difference` <= 25 ~ "21-25",
+    `Age Difference` > 25 ~ "25 or older"
+  )) %>% 
+  mutate(`Age Difference` = factor(`Age Difference`, 
+                                   levels = c("5 or younger", "6-10",
+                                              "11-15", "16-20", "21-25",
+                                              "25 or older")))
+
+
+trunc_test_gender <- trunc_test %>% 
+  drop_na(`Big Gender`) %>% 
+  drop_na(`Little Gender`) %>% 
+  filter(`Big Gender` != "Prefer not to say") %>% 
+  mutate(across(contains("Gender"), ~ case_when(
+    . %in% c("Male") ~ "Male",
+    . %in% c("Female") ~ "Female",
+    TRUE ~ "Gender Diverse"
+  ))) %>% 
+  mutate(`Same Gender` = factor(case_when(
+    `Big Gender` == `Little Gender` ~ "Same",
+    `Big Gender` != `Little Gender` ~ "Different"), levels = c("Same", "Different")))
+  
+trunc_test_race <- trunc_test %>% 
+  drop_na(`Big Race/Ethnicity`) %>% 
+  drop_na(`Little Participant: Race/Ethnicity`) %>% 
+  filter(!`Big Race/Ethnicity` %in%  c("Prefer not to say", "Prefer not to say;")) %>%
+  filter(!`Little Participant: Race/Ethnicity` %in% c("Prefer not to say", "Prefer not to say;")) %>% 
+  mutate(`Big Race/Ethnicity` = str_remove(`Big Race/Ethnicity`, ";$"),
+         `Little Participant: Race/Ethnicity` = str_remove(`Little Participant: Race/Ethnicity`, ";$")) %>% 
+  mutate(`Same Race` = mapply(check_alignment, `Big Race/Ethnicity`, `Little Participant: Race/Ethnicity`)) %>% 
+  mutate(`Same Race` = factor(`Same Race`, levels = c("Same", "Different"))) 
+
+
+
+trunc_test_edu <- trunc_test %>% 
+  drop_na(`Big Level of Education`) %>% 
+  mutate(education_level = case_when(
+    `Big Level of Education` %in% c("Some High School", "High School Graduate") ~ "High School or Less",
+    `Big Level of Education` %in% c("Some College", "Associate Degree", "Bachelors Degree") ~ "Undergraduate",
+    `Big Level of Education` %in% c("Masters Degree", "Doctor of Medicine (MD)", "Juris Doctorate (JD)", "PHD") ~ "Graduate"
+  )) %>% 
+  mutate(education_level = factor(education_level, levels = c("High School or Less",
+                                                              "Undergraduate",
+                                                              "Graduate")))
+
+trunc_test_rship <- trunc_test %>% 
+  drop_na(`Big Contact: Marital Status`) %>% 
+  mutate(relationship_status = case_when(
+    `Big Contact: Marital Status` %in% c("Married", "Domestic Partner", "Living w/ Significant Other") ~ "Partnered",
+    `Big Contact: Marital Status` %in% c("Divorced", "Separated", "Widowed") ~ "Previously Partnered",
+    `Big Contact: Marital Status` == "Single" ~ "Single",
+    TRUE ~ "Other"
+  )) %>% 
+  filter(relationship_status != "Other")
+
+
+trunc_test_occ <- trunc_test %>% 
+  drop_na(`Big Occupation`) %>% 
+  mutate(`Big Occupation` = case_when(
+    `Big Occupation` %in% c("Unemployed", "Unknown", "Homemaker", "Disabled", "Student", "Retired") ~ "Unemployed/Other",
+    TRUE ~ "Employed"
+  ))
+
+trunc_test_former <- trunc_test %>% 
+  mutate(past_exp = ifelse(is.na(`Big Contact: Former Big/Little`), "No experience", "Former Big/Little"))
+
+
+trunc_test_lang <- trunc_test %>% 
+  mutate(`Big Languages` = ifelse(is.na(`Big Languages`), "English", `Big Languages`),
+         `Little Contact: Language(s) Spoken` = ifelse(is.na(`Little Contact: Language(s) Spoken`), "English", `Little Contact: Language(s) Spoken`)) %>% 
+  mutate(Language_Alignment = mapply(language_alignment, `Big Languages`, `Little Contact: Language(s) Spoken`)) %>% 
+  mutate(Language_Alignment = factor(Language_Alignment, levels = c("Same", "Different")))
+
+
+
+
+bigrams_test <- trunc_test %>%
+  drop_na(`Rationale for Match`) %>% 
+  dplyr::select(match_id, `Rationale for Match`) %>% 
+  mutate(`Rationale for Match` = str_replace_all(
+    `Rationale for Match`,
+    c("B_first_name" = "Big", "L_first_name" = "Little", "B_last_name" = "Big", "L_last_name" = "Little",
+      "BS" = "Big", "BB" = "Big", "LS" = "Little", "LB" = "Little")
+  )) %>%
+  mutate(`Rationale for Match` = str_to_lower(`Rationale for Match`)) %>% 
+  unnest_tokens(bigram, `Rationale for Match`, token = "ngrams", n = 2) %>% 
+  separate(bigram, into = c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% c(stop_words$word, "shared", "distance", "miles", "big", "big's", "traits", "trait",
+                       "little", "little's", "1", "2", "3", "4", "5", "6", "7", "8", "9", "additional", 
+                       "mc", "emc", "match", "NA", "mom's", "mom", "PG", "wide", "mins", "min"),
+         !word2 %in% c(stop_words$word, "shared", "distance", "miles", "big", "big's", "additional", "traits", "trait",
+                       "little", "little's", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+                       "mc", "emc", "match", "NA", "mom's", "mom", "PG", "wide", "mins", "min")) %>%
+  unite(bigram, word1, word2, sep = " ") %>% 
+  filter(!(bigram %in% c("potential challenges", "child experience", "NA NA", "share similar", "similar personalities")))
+
+
+
+interest_bigrams_test <- bigrams_test %>%
+  filter(str_detect(bigram, regex(pattern, ignore_case = TRUE)))
+
+interest_bigram_counts_test <- interest_bigrams_test %>%
+  group_by(match_id) %>%
+  summarize(interest_bigram_count = n(), .groups = "drop") %>% 
+  arrange(-interest_bigram_count)
+
+trunc_test_interests <- trunc_test %>%
+  drop_na(`Rationale for Match`) %>% 
+  left_join(interest_bigram_counts_test, by = "match_id") %>%
+  mutate(interest_bigram_count = replace_na(interest_bigram_count, 0)) %>%
+  dplyr::select(match_id, `Rationale for Match`, interest_bigram_count) %>% 
+  mutate(interest_level = cut(interest_bigram_count,
+                              breaks = c(-1, 2, Inf),
+                              labels = c("Few", "Many")))
+
+
+
+
+distance_df_test <- bbbs_test %>% 
+  filter(!is.na(`Big Home Census Block Group`) & !is.na(`Little Mailing Address Census Block Group`)) %>% 
+  dplyr::select(`Match ID 18Char`, `Big Home Census Block Group`, `Little Mailing Address Census Block Group`) %>%
+  group_by(`Match ID 18Char`) %>% 
+  mutate(big_home = as.character(`Big Home Census Block Group`),
+    small_home = as.character(`Little Mailing Address Census Block Group`)) %>% 
+  summarize(big_home = first(big_home), small_home = first(small_home)) %>% 
+  ungroup()
+
+
+bg_ids_test <- unique(c(distance_df_test$big_home, distance_df_test$small_home))
+
+bg_geometries_test <- blocks_mn %>%
+  filter(GEOID20 %in% bg_ids_test) %>%
+  st_transform(4326)
+
+
+distance_geo_test <- distance_df_test %>%
+  left_join(bg_geometries_test %>% dplyr::select(GEOID20, geometry) %>% rename(big_geom = geometry),
+            by = c("big_home" = "GEOID20")) %>%
+  left_join(bg_geometries_test %>% dplyr::select(GEOID20, geometry) %>% rename(small_geom = geometry),
+            by = c("small_home" = "GEOID20")) 
+
+
+distance_geo_test <- distance_geo_test %>%
+  mutate(
+    big_centroid = st_centroid(big_geom),
+    small_centroid = st_centroid(small_geom)
+  )
+
+distance_geo_test <- distance_geo_test %>%
+  mutate(distance_m = st_distance(big_centroid, small_centroid, by_element = TRUE),
+         distance_km = as.numeric(distance_m) / 1000)  %>% 
+  drop_na(distance_km)
+
+
+
+bbbs_test <- bbbs_test %>% 
+  rename(match_id = `Match ID 18Char`)
+
+id_with_incomplete_completion_test <- bbbs_test %>% 
+  filter(is.na(`Completion Date`)) %>% 
+  distinct(match_id) %>% 
+  pull(match_id)
+  
+cadence_test <- bbbs_test %>% 
+  filter(!(match_id %in% id_with_incomplete_completion_test)) %>% 
+  group_by(match_id) %>% 
+  arrange(match_id, `Completion Date`) %>% 
+  mutate(call_order = row_number(),
+         complete_date = as.Date(`Completion Date`),
+         activation_date = as.Date(`Match Activation Date`)) %>%
+  dplyr::select(match_id, call_order, complete_date, activation_date) 
+
+individual_cadence_test <- cadence_test %>% 
+  mutate(cadence = ifelse(call_order == 1,
+                                      as.numeric(complete_date - first(activation_date)),
+                                      as.numeric(complete_date - lag(complete_date))),
+         days_since_activation = as.numeric(complete_date - first(activation_date))) %>% 
+  mutate(period = ifelse(days_since_activation <= 365, "Early", "Late")) %>% 
+  ungroup()
+  
+avg_cadence_test <- individual_cadence_test %>% 
+  group_by(match_id) %>% 
+  summarize(early_cadence = if(sum(period == "Early") > 0)
+    round(mean(cadence[period == "Early"]), 2) else NA_real_,
+    late_cadence = if(sum(period == "Late") > 0)
+    round(mean(cadence[period == "Late"]), 2) else NA_real_,
+    average_cadence = round(mean(cadence), 2),
+    total_calls = n()
+    ) %>% 
+  ungroup() %>% 
+  mutate(bin_cadence = case_when(
+    average_cadence < 25 ~ "< 25",
+    average_cadence >= 25 & average_cadence < 50 ~ "[25, 50)",
+    average_cadence >= 50 & average_cadence < 75 ~ "[50, 75)",
+    average_cadence >= 75 & average_cadence < 100 ~ "[75, 100)",
+    average_cadence >= 100 ~ ">= 100"
+  )) %>% 
+  mutate(bin_cadence = factor(bin_cadence, levels = c("< 25", "[25, 50)", 
+                                                      "[50, 75)", "[75, 100)",
+                                                      ">= 100")))
+
+
+
+
+
+msc_notes_test <- bbbs_test %>% 
+  dplyr::select(match_id, `Completion Date`, `Match Activation Date`, `Match Support Contact Notes`) %>% 
+  drop_na(`Match Support Contact Notes`) %>% 
+  filter(!(match_id %in% id_with_incomplete_completion_test)) %>% 
+  arrange(match_id, `Completion Date`) %>% 
+  mutate(complete_date = as.Date(`Completion Date`),
+         activation_date = as.Date(`Match Activation Date`)) %>%
+  rename(notes = `Match Support Contact Notes`) %>% 
+  dplyr::select(match_id, notes, complete_date, activation_date) %>% 
+  group_by(match_id) %>% 
+  mutate(days_since_activation = as.numeric(complete_date - first(activation_date))) %>% 
+  mutate(period = ifelse(days_since_activation <= 365, "Early", "Late")) %>% 
+  ungroup()
+
+
+sentiment_notes_test <- msc_notes_test %>% 
+  mutate(notes = tolower(notes)) %>% 
+  mutate(notes = str_replace_all(
+    notes,
+    c("b_first_name" = "big", "l_first_name" = "little", "b_last_name" = "big", "l_last_name" = "little",
+      "bs" = "big", "bb" = "big", "ls" = "little", "lb" = "little", "question:" = "", "activities:" = "", "answer:" = "", "child safety:" = "",
+      "child development:" = "", "child/volunteer relationship development:" = "", "relationship with bbbs:" = "",
+      "relationship with bigbig:" = "", "parent/volunteer concerns:" = "", "mss notes:" = "", "https://bbbsgtc.as.me/MCS" = "")
+  )) %>% 
+  mutate(notes = str_trim(notes)) %>% 
+  mutate(sentiment = sentiment_by(notes)$ave_sentiment)
+
+sentiment_match_test <- sentiment_by(sentiment_notes_test$notes, by = sentiment_notes_test$match_id)
+
+
+
+```
+
+
+```{r dotest}
+test <- bbbs_test %>% 
+  #rename(match_id = `Match ID 18Char`) %>% 
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Plus", "Site", `Program Type`)) %>%
+  mutate(`Program Type` = ifelse(`Program Type` == "Site Based Facilitated", "Site", `Program Type`)) %>% 
+  mutate(start_year = as.factor(year(`Match Activation Date`))) %>% 
+  group_by(match_id) %>% 
+  summarize(total_checkins = n(), program_type = first(`Program Type`),
+            start_year = first(start_year)) %>% 
+  left_join(trunc_test_gender %>% dplyr::select(match_id, `Same Gender`), by = "match_id") %>% 
+  left_join(trunc_test %>% dplyr::select(match_id, `Age Difference`), by = "match_id") %>% 
+  left_join(trunc_test_race %>% dplyr::select(match_id, `Same Race`), by = "match_id") %>% 
+  left_join(trunc_test_edu %>% dplyr::select(match_id, education_level), by = "match_id") %>%
+  left_join(trunc_test_rship %>% dplyr::select(match_id, relationship_status), by = "match_id") %>% 
+  left_join(trunc_test_occ %>% dplyr::select(match_id, `Big Occupation`), by = "match_id") %>% 
+  left_join(trunc_test_former %>% dplyr::select(match_id, past_exp), by = "match_id") %>% 
+  left_join(trunc_test_lang %>% dplyr::select(match_id, Language_Alignment), by = "match_id") %>% 
+  left_join(trunc_test_interests %>% dplyr::select(match_id, interest_level), by = c("match_id")) %>%
+  left_join(distance_geo_test %>% dplyr::select(`Match ID 18Char`, distance_km), by = c("match_id" = "Match ID 18Char")) %>% 
+  left_join(avg_cadence_test %>% dplyr::select(match_id, average_cadence), by = "match_id") %>% 
+  left_join(sentiment_match_test %>% dplyr::select(match_id, ave_sentiment), by = "match_id")
+
+
+test <- test %>% 
+  dplyr::select(-relationship_status,-distance_km,-total_checkins)
+
+test$ave_sentiment[is.na(test$ave_sentiment)] <- mean(test$ave_sentiment, na.rm = T)
+test$average_cadence[is.na(test$average_cadence)] <- mean(test$average_cadence, na.rm = T)
+
+
+library(mice)
+
+test$`Big Occupation` <- as.factor(test$`Big Occupation`)
+
+imputed_data <- mice(test, m = 5, method = "rf", seed = 3431)
+
+
+
+# Get the completed data
+test_complete <- complete(imputed_data)
+
+
+sapply(first_pass, function(x) (sum(is.na(x))))
+
+
+
+
+
+train <- first_pass %>% 
+  filter(Stage == "Closed") %>% 
+  dplyr::select(-match_id, -total_checkins, -relationship_status, -distance_km, -education_level, -length_cat)
+  
+train$`Big Occupation` <- as.factor(train$`Big Occupation`)
+imputed_data <- mice(train, m = 7, method = "rf", seed = 4050)
+
+  
+train_complete <- complete(imputed_data)
+
+split <- initial_split(train_complete, prop = c(0.3))
+train_data <- split %>%
+  training()
+
+test_data <- split %>%
+  testing()
+
+install.packages("AER")
+library(AER)
+
+
+tobit_model <- tobit(match_length ~ average_cadence + start_year + `Age Difference` + `Same Race` + program_type + `Big Occupation` 
+                     + ave_sentiment + interest_level + Language_Alignment,
+                     left = -Inf,
+                     right = 0,
+                     data = train_data)
+
+summary(tobit_model)
+
+test_data$predicted_length <- predict(tobit_model, newdata = test_data, type = "response")
+
+# ----------------------------
+# Step 5: Evaluate Model Performance (RMSE)
+# ----------------------------
+# RMSE can be calculated once the true match lengths for test data are known.
+# For demonstration, we use the observed (censored) match_length.
+rmse <- sqrt(mean((test_data$match_length - test_data$predicted_length)^2, na.rm = TRUE))
+cat("Test RMSE:", rmse, "\n")
+
+ggplot(test_data, aes(x = match_length, y = predicted_length)) +
+  geom_point(color = "blue", alpha = 0.7) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Tobit Regression: Predicted vs.\nActual Match Length",
+       x = "Observed (Censored) Match Length (days)",
+       y = "Predicted Match Length (days)")
+```
+  
+  
+```{r}
+unique(test$start_year)
+
+
+
+first_pass$ave_sentiment[is.na(first_pass$ave_sentiment)] <- mean(first_pass$ave_sentiment, na.rm = T)
+first_pass$average_cadence[is.na(first_pass$average_cadence)] <- mean(first_pass$average_cadence, na.rm = T)
+
+
+first_pass
+
+
+train$`Big Occupation` <- as.factor(train$`Big Occupation`)
+imputed_data <- mice(train, m = 7, method = "rf", seed = 4050)
+
+# Get the completed data
+train_complete <- complete(imputed_data)
+
+summary(lm(match_length ~ ., data = train_complete[,-1]))
+
+
+
+write_csv(train_complete, "train.csv")
+write_csv(test_complete, "test.csv")
+
+
+split <- initial_split(train_complete, prop = c(0.3))
+train_data <- split %>%
+  training()
+
+test_data <- split %>%
+  testing()
+
+
+
+set.seed(2521)
+
+y <- train_data$match_length
+x <- data.matrix(train_data[, colnames(train_data)[3:ncol(train_data)]])
+
+# LASSO - Feature selection
+cv_model <- cv.glmnet(x, y, alpha = 1)
+best_lambda <- cv_model$lambda.min
+plot(cv_model)
+
+# Feature selection: According to best_lambda, we can exclude the '.' variables (these got reduced to 0)
+coefficient_model <- coef(glmnet(x, y, alpha = 1, lambda = best_lambda))
+selected_features <- rownames(coefficient_model)[coefficient_model@i[-1] + 1]
+
+selected_features
+
+formula_model <- as.formula(paste("match_length ~ 1 +", paste(selected_features, collapse = " + ")))
+model_lm <- lm(match_length ~ 1 + average_cadence + program_type + start_year + `Same Gender` + `Age Difference` + `Big Occupation` + interest_level + ave_sentiment, data = train_data) %>%
+  stepAIC(direction = "both", trace = F)
+summary(model_lm)
+
+
+model_lm <- lm(match_length ~ ., data = train_data[, -1])
+summary(model_lm)
+
+vif(model_lm)
+
+
+
+
+```
+
+
+
+
+
